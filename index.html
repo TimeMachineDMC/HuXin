@@ -937,6 +937,7 @@
                     finalPrompt += `---文件名：${file.name}---\n证据文字内容：\n${file.content}\n`;
                 });
             }
+            updateRealEvidence(finalPrompt);
 
             await appendMessage('user', rawInput || `已上传 ${attachedFiles.length} 份证据`);
             userInput.value = '';
@@ -985,6 +986,10 @@
                                 } else if (data.type === 'chunk') {
                                     fullContent += data.content;
                                     aiMsgDiv.innerHTML = marked.parse(fullContent);
+                                } else if (data.type === 'error') {
+                                    const warningHtml = `<div class="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">${escapeHtml(data.content || '远程模型暂时不可用，已切换为本地应急指引。')}</div>`;
+                                    aiMsgDiv.innerHTML = fullContent ? marked.parse(fullContent) + warningHtml : warningHtml;
+                                    reasoningDiv.style.borderLeftColor = "#f59e0b";
                                 }
                                 chatBox.scrollTop = chatBox.scrollHeight;
                             } catch (e) { }
@@ -993,14 +998,15 @@
                 }
 
                 chatHistory.push({ "role": "user", "content": rawInput });
+                if (!fullContent) throw new Error("后端没有返回回答内容");
                 chatHistory.push({ "role": "assistant", "content": fullContent });
 
                 // --- 核心修改 2: 调用真实的证据提取逻辑 ---
-                updateRealEvidence(fullContent);
+                updateRealEvidence(`${finalPrompt}\n${fullContent}`);
 
             } catch (err) {
                 console.error("Fetch Error:", err);
-                aiMsgDiv.innerText = "❌ 连接后端失败。";
+                aiMsgDiv.innerText = `❌ ${err.message || '连接后端失败。'}`;
             } finally {
                 isGenerating = false;
                 sendBtn.style.opacity = '1';
@@ -1008,17 +1014,67 @@
             }
         }
 
+        function escapeHtml(text) {
+            return String(text).replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[ch]));
+        }
+
+        function formatMoney(value) {
+            return `¥ ${Number(value).toLocaleString('zh-CN')}`;
+        }
+
+        function parseSimpleChineseNumber(text) {
+            const digits = { '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
+            if (!text) return 0;
+            if (/^\d+$/.test(text)) return Number(text);
+            if (text === '十') return 10;
+            if (text.includes('十')) {
+                const [left, right] = text.split('十');
+                return (left ? digits[left] : 1) * 10 + (right ? digits[right] : 0);
+            }
+            return digits[text] || 0;
+        }
+
+        function extractAmount(text) {
+            const digitWan = text.match(/(\d+(?:\.\d+)?)\s*万(?:\s*(\d{1,4}))?/);
+            if (digitWan) {
+                return formatMoney(Number(digitWan[1]) * 10000 + Number(digitWan[2] || 0));
+            }
+
+            const digitYuan = text.match(/(\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{1,2})?\s*[元块]/);
+            if (digitYuan) {
+                return formatMoney(Number(digitYuan[1].replace(/,/g, '')));
+            }
+
+            const chineseWan = text.match(/([一二两三四五六七八九十]+)万([一二两三四五六七八九])?/);
+            if (chineseWan) {
+                const base = parseSimpleChineseNumber(chineseWan[1]) * 10000;
+                const tail = chineseWan[2] ? parseSimpleChineseNumber(chineseWan[2]) * 1000 : 0;
+                return formatMoney(base + tail);
+            }
+
+            return "待补充";
+        }
+
         function updateRealEvidence(aiResponse) {
             const list = document.getElementById('evidence-list');
 
-            // 增强正则：匹配带逗号或不带逗号的 3 位以上数字，后面跟着“元”或“块”
-            const amountMatch = aiResponse.match(/(\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{2})?\s*[元块]/);
             // 匹配公司或老板名称
-            const companyMatch = aiResponse.match(/(?:公司|单位|雇主|老板|被告)\s*[:：]\s*([^\s,，。]+)/) ||
-                aiResponse.match(/([^\s,，。]+(?:公司|工程部|工地|分包商))/);
+            const companyMatch = aiResponse.match(/(?:欠薪主体|公司|单位|雇主|老板|被告)\s*[:：]\s*([^\s,，。；]+)/) ||
+                aiResponse.match(/(?:在|到|给|跟)([^，。；\s]{2,30}?(?:公司|项目部|工程部|工地|分包商))/) ||
+                aiResponse.match(/([^，。；\s]{2,30}?(?:公司|项目部|工程部|分包商))/);
 
-            const amount = amountMatch ? `¥ ${amountMatch[1]}` : "¥ 25,000.00"; // 兜底显示
-            const company = companyMatch ? (companyMatch[1] || companyMatch[0]) : "识别中...";
+            const amount = extractAmount(aiResponse);
+            const company = companyMatch ? (companyMatch[1] || companyMatch[0]).replace(/^(?:在|到|给|跟)/, '') : "待补充";
+            const hasContract = /合同|劳动合同|协议/.test(aiResponse);
+            const hasEvidence = /欠条|结算单|工资单|微信|聊天记录|转账|录音|考勤|工牌|证人/.test(aiResponse);
+            const evidenceStatus = hasContract ? '证据较充分' : (hasEvidence ? '已有初步证据，建议补强' : '证据不足，需补充');
+            const evidenceDot = hasContract || hasEvidence ? 'bg-amber-500 shadow-[0_0_8px_#f59e0b]' : 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]';
 
             list.innerHTML = `
                 <li class="flex items-center gap-2 text-zinc-300 animate-in fade-in duration-500">
@@ -1030,8 +1086,8 @@
                     欠薪金额：<span class="text-amber-500 font-bold">${amount}</span>
                 </li>
                 <li class="flex items-center gap-2 text-zinc-500 animate-in fade-in duration-1000">
-                    <span class="w-2 h-2 rounded-full ${aiResponse.includes('合同') ? 'bg-amber-500' : 'bg-red-500 animate-pulse'} shadow-[0_0_8px_#ef4444]"></span> 
-                    证据链：${aiResponse.includes('合同') ? '证据较充分' : '缺失关键合同'}
+                    <span class="w-2 h-2 rounded-full ${evidenceDot}"></span> 
+                    证据链：${evidenceStatus}
                 </li>
             `;
         }

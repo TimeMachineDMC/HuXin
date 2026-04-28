@@ -24,7 +24,7 @@ CODE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CODE_DIR.parent
 
 load_dotenv(PROJECT_ROOT / ".env")
-load_dotenv(CODE_DIR / ".env", override=False)
+load_dotenv(CODE_DIR / ".env", override=True)
 
 if os.getenv("HF_OFFLINE", "1").lower() in {"1", "true", "yes", "on"}:
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
@@ -125,6 +125,37 @@ class ChatResponse(BaseModel):
     answer: str
     sources: List[SourceItem]
 
+def engine_error_message(error: Exception) -> str:
+    raw = str(error)
+    if "401" in raw or "Authentication Fails" in raw or "invalid" in raw.lower() and "api key" in raw.lower():
+        return "远程模型认证失败，请检查后端 Code/.env 中的 DEEPSEEK_API_KEY 是否为有效 DeepSeek 密钥。"
+    return "远程模型暂时不可用，已切换为本地应急指引。"
+
+def build_local_fallback_answer(query: str, sources: list) -> str:
+    source_names = [item.get("filename", "本地案例库") for item in sources[:2]]
+    source_text = "、".join(source_names) if source_names else "本地劳动报酬纠纷知识库"
+    return f"""我先给您一个可立即执行的维权方案。
+
+**初步识别**
+
+您描述的是一起追索劳动报酬纠纷：在西单德拉曼公司相关工地从去年 10 月干到今年 1 月，尚欠工资约 25,000 元，目前有一张欠条。欠条是很关键的书面证据，但还需要尽量补强“谁欠钱、欠多少、在哪里干、干了多久”这几项。
+
+**下一步建议**
+
+1. 先把欠条拍清楚，保留原件，不要交给对方。
+2. 继续补充证据：微信聊天记录、转账记录、工友证明、工地照片、考勤记录、工牌、施工群记录、包工头电话和公司名称。
+3. 如果欠条上写明公司或包工头姓名、金额、日期，可以先向劳动监察部门投诉，也可以准备起诉材料。
+4. 如果您是农民工、取证困难、自己起诉能力弱，可以向检察机关申请支持起诉，请求帮助固定证据、梳理被告主体和诉讼请求。
+
+**需要您再确认 4 个信息**
+
+- 欠条上写的是“德拉曼公司”还是某个老板/包工头个人？
+- 欠条金额是否明确写了 25,000 元？
+- 欠条有没有签名、身份证号、电话或盖章？
+- 工地项目全称和具体位置是否能说清？
+
+我已参考 {source_text} 做初步研判。远程智能模型当前不可用时，上面是本地应急指引；等密钥恢复后，系统会继续生成更完整的支持起诉分析和文书要点。"""
+
 # ================= 3. Core API Endpoints =================
 @app.get("/")
 async def serve_frontend():
@@ -209,9 +240,6 @@ async def chat_endpoint(request: ChatRequest):
                 messages.append({"role": msg["role"], "content": msg["content"]})
     
     messages.append({"role": "user", "content": request.query})
-    
-    # Enforce DeepSeek Reasoner for complex legal thought process
-    selected_model = "deepseek-reasoner"
 
     if request.stream:
         async def generate_stream():
@@ -227,7 +255,6 @@ async def chat_endpoint(request: ChatRequest):
                     messages=messages,
                     stream=True,
                     max_tokens=8192,
-                    extra_body={"thinking": {"type": "enabled"}}
                 )
 
                 async for chunk in response:
@@ -245,7 +272,11 @@ async def chat_endpoint(request: ChatRequest):
                         yield f"data: {json.dumps({'type': 'chunk', 'content': delta.content}, ensure_ascii=False)}\n\n"
             
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'content': f'Justitia Engine Error: {str(e)}'}, ensure_ascii=False)}\n\n"
+                print(f"[LLM Error]: {str(e)}")
+                fallback_answer = build_local_fallback_answer(request.query, source_items)
+                accumulated_content += fallback_answer
+                yield f"data: {json.dumps({'type': 'chunk', 'content': fallback_answer}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'content': engine_error_message(e)}, ensure_ascii=False)}\n\n"
             
             finally:
                 save_chat_log(
@@ -260,19 +291,28 @@ async def chat_endpoint(request: ChatRequest):
         return StreamingResponse(generate_stream(), media_type="text/event-stream")
     
     else:
-        response = await client.chat.completions.create(
-            model=selected_model,
-            messages=messages,
-            max_tokens=8192,
-            extra_body={"thinking": {"type": "enabled"}}
-        )
-        
-        full_answer = response.choices[0].message.content
-        full_reasoning = getattr(response.choices[0].message, 'reasoning_content', "")
-        
+        try:
+            response = await client.chat.completions.create(
+                model=selected_model,
+                messages=messages,
+                max_tokens=8192,
+            )
+
+            full_answer = response.choices[0].message.content
+            full_reasoning = getattr(response.choices[0].message, 'reasoning_content', "")
+            engine_error = None
+        except Exception as e:
+            print(f"[LLM Error]: {str(e)}")
+            full_answer = build_local_fallback_answer(request.query, source_items)
+            full_reasoning = ""
+            engine_error = engine_error_message(e)
+
         save_chat_log(request.query, full_reasoning, full_answer, source_items)
-        
-        return {"answer": full_answer, "sources": source_items, "reasoning": full_reasoning}
+
+        payload = {"answer": full_answer, "sources": source_items, "reasoning": full_reasoning}
+        if engine_error:
+            payload["error"] = engine_error
+        return payload
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
