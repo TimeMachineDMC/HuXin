@@ -1,6 +1,6 @@
 # HuXin 护薪法律平台
 
-HuXin 是一个面向农民工欠薪维权场景的法律智能平台。当前项目包含 FastAPI 后端、单页前端、DeepSeek 对话接口、Chroma 本地法律知识库检索、文件解析与 OCR 证据提取能力。
+HuXin 是一个面向农民工欠薪维权场景的法律智能平台。当前项目包含 FastAPI 后端、单页前端、DeepSeek 对话接口、Chroma 本地法律知识库检索、文件解析、RapidOCR 图片证据提取与 DOCX 文书导出能力。
 
 ## 项目结构
 
@@ -39,7 +39,7 @@ Windows 可以运行：
 run_local.bat
 ```
 
-## GitHub Pages 与 cpolar
+## GitHub Pages 与公网隧道
 
 GitHub Pages 继续使用仓库根目录的 `index.html`。页面里的 `PAGE_API_BASE_URL` 保留为当前公网后端地址；本地由 FastAPI 打开 `Code/Web/index.html` 时，会自动使用当前本地服务地址。
 
@@ -56,7 +56,7 @@ GitHub Pages 继续使用仓库根目录的 `index.html`。页面里的 `PAGE_AP
 也可以不改代码，直接用 `api` 参数临时指定新地址：
 
 ```text
-https://timemachinedmc.github.io/HuXin/?api=https://你的新地址.r6.cpolar.top
+https://timemachinedmc.github.io/HuXin/?api=https://你的新地址.trycloudflare.com
 ```
 
 页面会把这个地址保存到当前浏览器的 `localStorage`。如果要清除临时地址，在浏览器控制台运行：
@@ -65,7 +65,7 @@ https://timemachinedmc.github.io/HuXin/?api=https://你的新地址.r6.cpolar.to
 localStorage.removeItem("HUXIN_API_BASE_URL")
 ```
 
-只在自己电脑本地调试时，直接访问 `http://127.0.0.1:8000` 最稳；打开 GitHub Pages 时，浏览器会走 cpolar 公开地址，不会自动连接你的本机后端。
+只在自己电脑本地调试时，直接访问 `http://127.0.0.1:8000` 最稳；打开 GitHub Pages 时，浏览器会走公网 HTTPS 隧道，不会自动连接你的本机后端。
 
 ## 重建法律知识库
 

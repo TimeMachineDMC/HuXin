@@ -1,15 +1,22 @@
 import io
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import List
+from urllib.parse import quote
 
 import docx2txt
 import numpy as np
 import uvicorn
+from bs4 import BeautifulSoup, NavigableString
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.shared import Pt
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_chroma import Chroma
@@ -47,14 +54,62 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 if not DEEPSEEK_API_KEY:
     raise ValueError("DEEPSEEK_API_KEY not found. Copy .env.example to Code/.env or project .env first.")
 
-reader = None
-try:
-    import easyocr
+ocr_engine = None
+ocr_engine_name = None
+ocr_init_error = None
 
-    reader = easyocr.Reader(["ch_sim", "en"])
-    print("EasyOCR initialized successfully")
-except Exception as e:
-    print(f"EasyOCR initialization failed: {e}")
+
+def initialize_ocr_engine():
+    """Prefer RapidOCR for Chinese documents, then fall back to EasyOCR."""
+    global ocr_engine, ocr_engine_name, ocr_init_error
+
+    try:
+        from rapidocr import RapidOCR
+
+        ocr_engine = RapidOCR()
+        ocr_engine_name = "RapidOCR(PP-OCRv4)"
+        ocr_init_error = None
+        print("RapidOCR initialized successfully")
+        return
+    except Exception as e:
+        ocr_init_error = f"RapidOCR initialization failed: {e}"
+        print(ocr_init_error)
+
+    try:
+        import easyocr
+
+        ocr_engine = easyocr.Reader(["ch_sim", "en"])
+        ocr_engine_name = "EasyOCR"
+        print("EasyOCR initialized successfully")
+    except Exception as e:
+        ocr_init_error = f"{ocr_init_error}; EasyOCR initialization failed: {e}" if ocr_init_error else f"EasyOCR initialization failed: {e}"
+        print(ocr_init_error)
+
+
+initialize_ocr_engine()
+
+
+def run_ocr(image_np: np.ndarray) -> tuple[str, float | None]:
+    if ocr_engine is None:
+        raise RuntimeError(ocr_init_error or "OCR engine is not initialized")
+
+    if ocr_engine_name and ocr_engine_name.startswith("RapidOCR"):
+        result = ocr_engine(image_np)
+        lines = [line.strip() for line in getattr(result, "txts", ()) if str(line).strip()]
+        scores = [float(score) for score in getattr(result, "scores", ()) if score is not None]
+        confidence = round(sum(scores) / len(scores), 4) if scores else None
+        return "\n".join(lines), confidence
+
+    result = ocr_engine.readtext(image_np, detail=1, paragraph=False)
+    lines = []
+    scores = []
+    for item in result:
+        if len(item) >= 2 and str(item[1]).strip():
+            lines.append(str(item[1]).strip())
+        if len(item) >= 3:
+            scores.append(float(item[2]))
+    confidence = round(sum(scores) / len(scores), 4) if scores else None
+    return "\n".join(lines), confidence
 
 def save_chat_log(query: str, reasoning: str, answer: str, sources: list):
     """Save chat history and reasoning to JSONL format."""
@@ -104,7 +159,9 @@ async def health_check():
         "status": "ok",
         "database_path": str(DB_SAVE_PATH),
         "database_exists": DB_SAVE_PATH.exists(),
-        "ocr_ready": reader is not None,
+        "ocr_ready": ocr_engine is not None,
+        "ocr_engine": ocr_engine_name,
+        "ocr_init_error": ocr_init_error if ocr_engine is None else None,
     }
 
 # ================= 2. Data Models =================
@@ -124,6 +181,121 @@ class SourceItem(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: List[SourceItem]
+
+class DocExportRequest(BaseModel):
+    title: str = "护薪法律文书"
+    html: str
+
+
+def safe_filename(title: str) -> str:
+    cleaned = re.sub(r"[\\/:*?\"<>|\r\n\t]+", "_", title).strip(" ._")
+    return (cleaned or "护薪法律文书")[:80]
+
+
+def set_document_fonts(document: Document):
+    normal = document.styles["Normal"]
+    normal.font.name = "SimSun"
+    normal.font.size = Pt(12)
+    normal._element.rPr.rFonts.set(qn("w:eastAsia"), "SimSun")
+
+
+def resolve_alignment(tag, inherited_alignment=None):
+    classes = set(tag.get("class", []) if hasattr(tag, "get") else [])
+    if "text-center" in classes:
+        return WD_ALIGN_PARAGRAPH.CENTER
+    if "text-right" in classes:
+        return WD_ALIGN_PARAGRAPH.RIGHT
+    return inherited_alignment
+
+
+def add_runs_from_node(paragraph, node, inherited_bold=False):
+    if isinstance(node, NavigableString):
+        text = str(node).replace("\xa0", " ")
+        if text:
+            run = paragraph.add_run(text)
+            run.bold = inherited_bold
+        return
+
+    if not getattr(node, "name", None):
+        return
+
+    if node.name == "br":
+        paragraph.add_run("\n")
+        return
+
+    classes = set(node.get("class", []))
+    is_bold = inherited_bold or node.name in {"strong", "b"} or "font-bold" in classes
+    for child in node.children:
+        add_runs_from_node(paragraph, child, is_bold)
+
+
+def add_html_paragraph(document: Document, tag, alignment=None):
+    paragraph = document.add_paragraph()
+    classes = set(tag.get("class", []))
+
+    if tag.name == "h1":
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for child in tag.children:
+            add_runs_from_node(paragraph, child, True)
+        for run in paragraph.runs:
+            run.font.size = Pt(18)
+        return
+
+    if tag.name in {"h2", "h3"}:
+        paragraph.alignment = alignment
+        for child in tag.children:
+            add_runs_from_node(paragraph, child, True)
+        for run in paragraph.runs:
+            run.font.size = Pt(14)
+        return
+
+    paragraph.alignment = alignment
+    if "indent-8" in classes:
+        paragraph.paragraph_format.first_line_indent = Pt(24)
+
+    for child in tag.children:
+        add_runs_from_node(paragraph, child)
+
+
+def append_html_blocks(document: Document, container, inherited_alignment=None):
+    block_tags = {"h1", "h2", "h3", "p", "li"}
+    for child in container.children:
+        if isinstance(child, NavigableString):
+            text = str(child).strip()
+            if text:
+                document.add_paragraph(text)
+            continue
+
+        if not getattr(child, "name", None) or child.name in {"script", "style"}:
+            continue
+
+        alignment = resolve_alignment(child, inherited_alignment)
+        if child.name in block_tags:
+            add_html_paragraph(document, child, alignment)
+        elif child.name == "br":
+            document.add_paragraph()
+        else:
+            append_html_blocks(document, child, alignment)
+
+
+def build_docx_bytes(title: str, html: str) -> bytes:
+    document = Document()
+    set_document_fonts(document)
+
+    section = document.sections[0]
+    section.top_margin = Pt(72)
+    section.bottom_margin = Pt(72)
+    section.left_margin = Pt(72)
+    section.right_margin = Pt(72)
+
+    soup = BeautifulSoup(html, "html.parser")
+    root = soup.body or soup
+    append_html_blocks(document, root)
+
+    buffer = io.BytesIO()
+    document.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 def engine_error_message(error: Exception) -> str:
     raw = str(error)
@@ -314,6 +486,24 @@ async def chat_endpoint(request: ChatRequest):
             payload["error"] = engine_error
         return payload
 
+@app.post("/api/export-docx")
+async def export_docx(payload: DocExportRequest):
+    title = safe_filename(payload.title)
+    if not payload.html.strip():
+        raise HTTPException(status_code=400, detail="文书内容为空，无法导出")
+
+    docx_bytes = build_docx_bytes(title, payload.html)
+    filename = f"{title}.docx"
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"
+    }
+    return StreamingResponse(
+        io.BytesIO(docx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
+    )
+
+
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
@@ -321,6 +511,7 @@ async def upload_file(file: UploadFile = File(...)):
         text = ""
         original_filename = file.filename or "uploaded_file"
         filename = original_filename.lower()
+        ocr_confidence = None
         
         # 1. 处理 PDF/DOCX/TXT (保持原样)
         if filename.endswith('.pdf'):
@@ -332,23 +523,25 @@ async def upload_file(file: UploadFile = File(...)):
         elif filename.endswith('.txt'):
             text = contents.decode('utf-8')
             
-        # 2. 新增：处理图片 (OCR)
+        # 2. 处理图片证据 (OCR)
         elif filename.endswith(('.png', '.jpg', '.jpeg', '.bmp')):
-            if reader is None:
-                return {"error": "OCR 引擎未就绪，请检查 easyocr 与模型文件是否安装完整"}
+            if ocr_engine is None:
+                return {"error": f"OCR 引擎未就绪：{ocr_init_error or '请检查 rapidocr/easyocr 与模型文件是否安装完整'}"}
 
-            print(f"[OCR] 正在识别图片证据: {original_filename}")
+            print(f"[OCR] 正在使用 {ocr_engine_name} 识别图片证据: {original_filename}")
             image = Image.open(io.BytesIO(contents)).convert('RGB')
-            # 转换为 numpy 数组供 easyocr 使用
             image_np = np.array(image)
-            result = reader.readtext(image_np, detail=0) # 只获取文本内容
-            text = "\n".join(result)
+            text, ocr_confidence = run_ocr(image_np)
+
+            if not text.strip():
+                return {"error": "OCR 未识别到有效文字，请换一张更清晰的图片，或直接输入欠条上的金额、签名和日期。"}
 
             print("\n" + "="*30 + " 扫描结果可视化 " + "="*30)
             print(text) # 这里会在后端控制台完整输出图片文字
             print("="*76 + "\n")
             
-            print(f"[OCR] 提取字数: {len(text)}")
+            confidence_log = f"，平均置信度: {ocr_confidence}" if ocr_confidence is not None else ""
+            print(f"[OCR] 提取字数: {len(text)}{confidence_log}")
             
         else:
             return {"error": "暂不支持该文件格式"}
@@ -356,7 +549,9 @@ async def upload_file(file: UploadFile = File(...)):
         return {
             "filename": original_filename,
             "content_preview": text[:500],
-            "full_content": text
+            "full_content": text,
+            "ocr_engine": ocr_engine_name if filename.endswith(('.png', '.jpg', '.jpeg', '.bmp')) else None,
+            "ocr_confidence": ocr_confidence,
         }
     except Exception as e:
         print(f"[Parse Error]: {str(e)}")

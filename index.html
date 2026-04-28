@@ -177,7 +177,7 @@
     <header
         class="border-b border-white/5 p-4 bg-black/20 backdrop-blur-xl sticky top-0 z-30 flex items-center justify-between">
         <div class="flex items-center gap-6">
-            <div class="flex items-center gap-3 cursor-pointer" onclick="switchView('view-home')">
+            <div class="flex items-center gap-3 cursor-pointer" onclick="goHomeFromBrand()">
                 <div class="text-amber-500">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -196,11 +196,11 @@
             </div>
 
             <nav id="main-nav" class="hidden flex items-center gap-6 ml-8 border-l border-white/10 pl-8">
-                <button type="button" data-target="view-home" onclick="switchView('view-home')"
+                <button type="button" data-target="view-home" onclick="goToStep(1)"
                     class="nav-btn text-amber-500 font-bold text-sm transition-colors hover:text-amber-400">工作台</button>
-                <button type="button" data-target="view-chat" onclick="switchView('view-chat')"
+                <button type="button" data-target="view-chat" onclick="goToStep(2)"
                     class="nav-btn text-zinc-400 font-bold text-sm transition-colors hover:text-amber-400">智能研判</button>
-                <button type="button" data-target="view-doc" onclick="switchView('view-doc')"
+                <button type="button" data-target="view-doc" onclick="goToStep(3)"
                     class="nav-btn text-zinc-400 font-bold text-sm transition-colors hover:text-amber-400">文书中心</button>
             </nav>
         </div>
@@ -508,7 +508,7 @@
             </div>
 
             <div class="flex gap-4 justify-center">
-                <button onclick="switchView('view-home')"
+                <button onclick="goToStep(1)"
                     class="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-bold rounded-xl transition-colors border border-transparent hover:border-zinc-600">
                     返回工作台
                 </button>
@@ -521,7 +521,7 @@
     </main>
 
     <script>
-        // GitHub Pages 使用 cpolar；本地由 FastAPI 托管时自动使用当前站点地址。
+        // GitHub Pages 使用公网 HTTPS 隧道；本地由 FastAPI 托管时自动使用当前站点地址。
         const PAGE_API_BASE_URL = "https://belongs-spencer-practice-sox.trycloudflare.com";
         const LOCAL_API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : window.location.origin;
         const apiFromUrl = new URLSearchParams(window.location.search).get("api");
@@ -542,15 +542,34 @@
         const API_BASE_URL = (configuredApiBase || (window.location.hostname.endsWith("github.io") ? PAGE_API_BASE_URL : LOCAL_API_BASE_URL)).replace(/\/+$/, "");
         const API_URL = `${API_BASE_URL}/api/chat`;
         const UPLOAD_URL = `${API_BASE_URL}/api/upload`;
+        const EXPORT_DOCX_URL = `${API_BASE_URL}/api/export-docx`;
 
         const views = ['view-login', 'view-home', 'view-chat', 'view-doc', 'view-status'];
+        const stepViewMap = {
+            1: 'view-home',
+            2: 'view-chat',
+            3: 'view-doc',
+            4: 'view-status'
+        };
+        const viewStepMap = {
+            'view-home': 1,
+            'view-chat': 2,
+            'view-doc': 3,
+            'view-status': 4
+        };
+        let currentStep = 0;
+        let maxUnlockedStep = 0;
 
         function switchView(targetId) {
             // 隐藏所有视图
-            views.forEach(id => { document.getElementById(id).style.display = 'none'; });
+            views.forEach(id => {
+                const view = document.getElementById(id);
+                if (view) view.style.display = 'none';
+            });
 
             // 显示目标视图
             const targetEl = document.getElementById(targetId);
+            if (!targetEl) return;
             targetEl.style.display = (targetId === 'view-login') ? 'flex' : 'block';
 
             // 底栏显隐
@@ -566,6 +585,7 @@
                     btn.classList.add('text-amber-500');
                 }
             });
+            updateNavAvailability();
         }
 
         function doLogin() {
@@ -576,35 +596,98 @@
             updateProgress(1);
         }
 
-        function updateProgress(step) {
+        function updateNavAvailability() {
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                const targetStep = viewStepMap[btn.dataset.target] || 0;
+                const locked = targetStep > maxUnlockedStep;
+                btn.disabled = locked;
+                btn.classList.toggle('opacity-40', locked);
+                btn.classList.toggle('cursor-not-allowed', locked);
+            });
+        }
+
+        function updateProgress(step, { unlock = true } = {}) {
+            currentStep = step;
+            if (unlock) maxUnlockedStep = Math.max(maxUnlockedStep, step);
+
             for (let i = 1; i <= 4; i++) {
                 const node = document.getElementById(`node-${i}`);
                 const text = document.getElementById(`text-${i}`);
+                const unlocked = i <= maxUnlockedStep;
+                const interactiveClass = unlocked ? "cursor-pointer hover:scale-105" : "cursor-not-allowed opacity-60";
 
                 // 增加空值检查，防止报错
-                if (node) node.className = "step-node w-8 h-8 rounded-full border-2 border-zinc-600 bg-zinc-900 flex items-center justify-center text-xs font-bold text-zinc-500";
-                if (text) text.className = "text-[11px] mt-2 font-bold text-zinc-500 tracking-wider";
+                if (node) node.className = `step-node w-8 h-8 rounded-full border-2 border-zinc-600 bg-zinc-900 flex items-center justify-center text-xs font-bold text-zinc-500 transition-all ${interactiveClass}`;
+                if (text) text.className = `text-[11px] mt-2 font-bold text-zinc-500 tracking-wider transition-colors ${unlocked ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`;
             }
 
             const line = document.getElementById('line-1');
-            if (line) line.style.width = ((step - 1) * 33.3) + "%";
+            if (line) line.style.width = ((Math.max(maxUnlockedStep, step) - 1) * 33.3) + "%";
 
-            for (let i = 1; i <= step; i++) {
+            for (let i = 1; i <= maxUnlockedStep; i++) {
                 const node = document.getElementById(`node-${i}`);
                 const text = document.getElementById(`text-${i}`);
                 if (!node || !text) continue;
 
                 if (i === step) {
-                    node.className = "step-node active w-8 h-8 rounded-full border-2 border-transparent bg-amber-500 text-black flex items-center justify-center text-xs font-bold shadow-[0_0_15px_rgba(245,158,11,0.5)]";
-                    text.className = "text-[11px] mt-2 font-bold text-amber-500 tracking-wider";
+                    node.className = "step-node active w-8 h-8 rounded-full border-2 border-transparent bg-amber-500 text-black flex items-center justify-center text-xs font-bold shadow-[0_0_15px_rgba(245,158,11,0.5)] cursor-pointer transition-all hover:scale-105";
+                    text.className = "text-[11px] mt-2 font-bold text-amber-500 tracking-wider cursor-pointer transition-colors";
                 } else {
-                    node.className = "step-node completed w-8 h-8 rounded-full border-2 border-transparent bg-amber-500 text-black flex items-center justify-center text-xs font-bold";
-                    text.className = "text-[11px] mt-2 font-bold text-amber-500 tracking-wider";
+                    node.className = "step-node completed w-8 h-8 rounded-full border-2 border-transparent bg-amber-500/90 text-black flex items-center justify-center text-xs font-bold cursor-pointer transition-all hover:scale-105";
+                    text.className = "text-[11px] mt-2 font-bold text-amber-500/80 tracking-wider cursor-pointer transition-colors hover:text-amber-400";
                 }
+            }
+
+            updateNavAvailability();
+        }
+
+        function goToStep(step) {
+            if (step > maxUnlockedStep) {
+                alert("请先完成当前阶段，再进入后续办案流程。");
+                return;
+            }
+
+            const targetView = stepViewMap[step];
+            if (!targetView) return;
+
+            switchView(targetView);
+            updateProgress(step, { unlock: false });
+            if (step === 3) {
+                switchTemplate(document.querySelector('input[name=doc_type]:checked').value);
+            }
+        }
+
+        function goHomeFromBrand() {
+            if (maxUnlockedStep > 0) {
+                goToStep(1);
+            } else {
+                switchView('view-login');
+            }
+        }
+
+        function initProgressNavigation() {
+            for (let i = 1; i <= 4; i++) {
+                const controls = [document.getElementById(`node-${i}`), document.getElementById(`text-${i}`)];
+                controls.forEach(control => {
+                    if (!control) return;
+                    control.setAttribute('role', 'button');
+                    control.setAttribute('tabindex', '0');
+                    control.addEventListener('click', () => goToStep(i));
+                    control.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            goToStep(i);
+                        }
+                    });
+                });
             }
         }
 
         function submitToProcuratorate() {
+            if (maxUnlockedStep < 3) {
+                alert("请先完成智能研判并生成文书，再提交检察支持起诉申请。");
+                return;
+            }
             switchView('view-status');
             updateProgress(4); // 进度条走到最后一步
         }
@@ -618,10 +701,8 @@
                 greeting.innerHTML = "您好，已开启智能取证模式。请点击下方上传按钮，拍摄您的欠条或工资单。";
                 setTimeout(() => document.getElementById('file-input').click(), 500);
             }
-            updateProgress(1);
+            updateProgress(2);
         }
-
-        function openDoc() { switchView('view-doc'); updateProgress(3); }
 
         function simulateVoiceInput() {
             const input = document.getElementById('user-input');
@@ -776,14 +857,73 @@
             }
         }
 
-        // 模拟导出功能
-        function exportDoc(format) {
-            const type = document.querySelector('input[name=doc_type]:checked').value;
-            alert(`✅ 系统已捕获 ${type} 模板的最新修改内容。\n\n在演示版中，此功能模拟将带格式文本保存为 .docx 文件并触发浏览器下载。`);
+        function getSelectedDocMeta() {
+            const selected = document.querySelector('input[name=doc_type]:checked');
+            if (!selected) return { type: 'legal_aid', title: '护薪法律文书' };
+            const labelText = selected.closest('label')?.innerText || selected.value;
+            const title = labelText.replace(/^\s*\d+\.\s*/, '').trim() || '护薪法律文书';
+            return { type: selected.value, title };
+        }
+
+        function sanitizeFileName(name) {
+            return name.replace(/[\\/:*?"<>|\r\n\t]+/g, '_').replace(/^\.+|\.+$/g, '').trim() || '护薪法律文书';
+        }
+
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportAsWordHtml(title, html) {
+            const wordHtml = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head><body>${html}</body></html>`;
+            const blob = new Blob([wordHtml], { type: 'application/msword;charset=utf-8' });
+            downloadBlob(blob, `${sanitizeFileName(title)}.doc`);
+        }
+
+        async function exportDoc(format) {
+            const editor = document.getElementById('editable-doc');
+            const { title } = getSelectedDocMeta();
+            const html = editor.innerHTML.trim();
+
+            if (!html) {
+                alert("当前文书内容为空，无法导出。");
+                return;
+            }
+
+            try {
+                const response = await fetch(EXPORT_DOCX_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, html })
+                });
+
+                if (!response.ok) {
+                    const detail = await response.text();
+                    throw new Error(detail || `HTTP ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                downloadBlob(blob, `${sanitizeFileName(title)}.docx`);
+            } catch (error) {
+                console.warn("DOCX 导出失败，已使用本地 Word 兼容格式兜底:", error);
+                exportAsWordHtml(title, html);
+                alert("后端 DOCX 导出暂不可用，已为您生成 Word 可打开的本地文档。");
+            }
         }
 
         // 确保打开文档页时，默认渲染第一个模板
         function openDoc() {
+            if (maxUnlockedStep < 3) {
+                alert("请先在智能研判阶段发送案情或证据，待系统完成研判后再生成文书。");
+                if (maxUnlockedStep < 2) openChat();
+                return;
+            }
             switchView('view-doc');
             updateProgress(3);
             // 每次进入时重新渲染当前选中的模板
@@ -792,7 +932,7 @@
 
         function backToChat() {
             switchView('view-chat');
-            updateProgress(2); // 进度回退到法律研判阶段
+            updateProgress(2, { unlock: false }); // 视图回退，已解锁阶段保留
         }
 
 
@@ -882,15 +1022,22 @@
                     const data = await res.json();
                     loadingTag.remove();
 
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
                     if (data.full_content) {
                         attachedFiles.push({ name: file.name, content: data.full_content });
                         renderTags(); // 渲染带删除按钮的标签
-                        if (typeof lightUpEvidence === "function") lightUpEvidence();
+                        if (typeof updateRealEvidence === "function") updateRealEvidence(data.full_content);
+                        else if (typeof lightUpEvidence === "function") lightUpEvidence();
+                    } else {
+                        throw new Error("未从文件中解析到可用文字，请换一份清晰材料或手动输入关键信息。");
                     }
                 } catch (err) {
                     loadingTag.remove();
                     console.error("上传失败:", err);
-                    alert(`上传请求失败，请确认后端服务可访问：${API_BASE_URL}`);
+                    alert(`上传失败：${err.message || '请确认后端服务可访问。'}\n\n当前后端：${API_BASE_URL}`);
                 }
             }
             fileInput.value = "";
@@ -1000,12 +1147,14 @@
                     }
                 }
 
-                chatHistory.push({ "role": "user", "content": rawInput });
                 if (!fullContent) throw new Error("后端没有返回回答内容");
+                chatHistory.push({ "role": "user", "content": rawInput || finalPrompt });
                 chatHistory.push({ "role": "assistant", "content": fullContent });
 
                 // --- 核心修改 2: 调用真实的证据提取逻辑 ---
                 updateRealEvidence(`${finalPrompt}\n${fullContent}`);
+                maxUnlockedStep = Math.max(maxUnlockedStep, 3);
+                updateProgress(2, { unlock: false });
 
             } catch (err) {
                 console.error("Fetch Error:", err);
@@ -1096,7 +1245,10 @@
         }
 
         // 初始化
-        window.onload = () => { switchView('view-login'); };
+        window.onload = () => {
+            initProgressNavigation();
+            switchView('view-login');
+        };
     </script>
 </body>
 
