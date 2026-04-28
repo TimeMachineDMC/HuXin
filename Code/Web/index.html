@@ -521,25 +521,13 @@
     </main>
 
     <script>
-        // GitHub Pages 使用公网 HTTPS 隧道；本地由 FastAPI 托管时自动使用当前站点地址。
-        const PAGE_API_BASE_URL = "https://belongs-spencer-practice-sox.trycloudflare.com";
-        const LOCAL_API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : window.location.origin;
+        // GitHub Pages 直接连接本机后端。先运行 run_local.sh / run_local.bat，再打开页面。
+        const LOCAL_API_BASE_URL = window.location.hostname.endsWith("github.io") || window.location.protocol === "file:"
+            ? "http://127.0.0.1:8000"
+            : window.location.origin;
         const apiFromUrl = new URLSearchParams(window.location.search).get("api");
-        if (apiFromUrl) localStorage.setItem("HUXIN_API_BASE_URL", apiFromUrl);
-        const retiredApiHosts = [
-            "2f094c68.r6.cpolar.top",
-            "2f7b2b0c.r6.cpolar.top",
-            "pressed-august-valium-italic.trycloudflare.com",
-            "horses-jacksonville-find-attending.trycloudflare.com",
-            "raising-causes-appears-gst.trycloudflare.com",
-            "per-spend-sells-contributing.trycloudflare.com"
-        ];
-        const savedApiBase = localStorage.getItem("HUXIN_API_BASE_URL");
-        if (savedApiBase && retiredApiHosts.some(host => savedApiBase.includes(host))) {
-            localStorage.removeItem("HUXIN_API_BASE_URL");
-        }
-        const configuredApiBase = window.HUXIN_API_BASE_URL || apiFromUrl || localStorage.getItem("HUXIN_API_BASE_URL");
-        const API_BASE_URL = (configuredApiBase || (window.location.hostname.endsWith("github.io") ? PAGE_API_BASE_URL : LOCAL_API_BASE_URL)).replace(/\/+$/, "");
+        const configuredApiBase = window.HUXIN_API_BASE_URL || apiFromUrl;
+        const API_BASE_URL = (configuredApiBase || LOCAL_API_BASE_URL).replace(/\/+$/, "");
         const API_URL = `${API_BASE_URL}/api/chat`;
         const UPLOAD_URL = `${API_BASE_URL}/api/upload`;
         const EXPORT_DOCX_URL = `${API_BASE_URL}/api/export-docx`;
@@ -1213,28 +1201,72 @@
             return "待补充";
         }
 
+        function normalizeDebtorCandidate(candidate) {
+            if (!candidate) return "";
+
+            let value = String(candidate)
+                .replace(/[“”"『』《》]/g, "")
+                .replace(/^(?:您说的|所谓的|这个|那个|该|欠薪主体|用工主体|用人单位|被申请人|被告|雇主|老板)\s*(?:是|为)?\s*/u, "")
+                .replace(/(?:全称|完整名称|身份信息|统一社会信用代码|联系方式|电话|地址|盖章|签字|签名|是什么|是否|需要|请|吗|呢|？|\?).*$/u, "")
+                .replace(/[，。；、,\n\r].*$/u, "")
+                .trim();
+
+            const orgMatch = value.match(/[\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组)/u);
+            if (orgMatch) value = orgMatch[0];
+
+            return value
+                .replace(/^(?:在|到|给|跟|为)/u, "")
+                .replace(/(?:那个|这个)?(?:工地|项目|现场)(?:干活|干木工|务工|上班|做工)?.*$/u, "")
+                .replace(/(?:干活|干木工|务工|上班|做工).*$/u, "")
+                .trim();
+        }
+
+        function isUsefulDebtorCandidate(candidate) {
+            if (!candidate || candidate.length < 2 || candidate.length > 40) return false;
+            if (/^(?:公司|单位|雇主|老板|被告|被申请人|项目|工地|包工头|劳动者|申请人)$/u.test(candidate)) return false;
+            if (/(?:某|XX|xxx|未知|待补充|不清楚|全称|姓名|身份|信息|电话|地址|证据|欠条|工资|金额|劳动合同|工牌)/iu.test(candidate)) return false;
+            return /(?:公司|项目部|工程部|分包商|劳务队|班组)$|^[\u4e00-\u9fa5A-Za-z0-9·]{2,8}(?:老板|包工头)$/u.test(candidate);
+        }
+
+        function extractDebtor(text) {
+            const candidates = [];
+            const patterns = [
+                /(?:在|到|给|跟|为|受雇于|入职|就职于)\s*[“"]?([\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组))[”"]?(?=那个|这个|的|工地|项目|干|做|上班|务工|施工|$)/gu,
+                /(?:欠薪主体|用工主体|用人单位|被申请人|被告|雇主|劳务公司)\s*[:：]\s*[“"]?([^，。；\n\r]{2,50})/gu,
+                /[“"]([\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组))[”"]/gu,
+                /([\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组))/gu
+            ];
+
+            for (const pattern of patterns) {
+                for (const match of text.matchAll(pattern)) {
+                    const candidate = normalizeDebtorCandidate(match[1]);
+                    if (isUsefulDebtorCandidate(candidate)) candidates.push(candidate);
+                }
+                if (candidates.length) break;
+            }
+
+            return candidates[0] || "待补充";
+        }
+
         function updateRealEvidence(aiResponse) {
             const list = document.getElementById('evidence-list');
 
-            // 匹配公司或老板名称
-            const companyMatch = aiResponse.match(/(?:欠薪主体|公司|单位|雇主|老板|被告)\s*[:：]\s*([^\s,，。；]+)/) ||
-                aiResponse.match(/(?:在|到|给|跟)([^，。；\s]{2,30}?(?:公司|项目部|工程部|工地|分包商))/) ||
-                aiResponse.match(/([^，。；\s]{2,30}?(?:公司|项目部|工程部|分包商))/);
-
             const amount = extractAmount(aiResponse);
-            const company = companyMatch ? (companyMatch[1] || companyMatch[0]).replace(/^(?:在|到|给|跟)/, '') : "待补充";
+            const company = extractDebtor(aiResponse);
             const hasContract = /合同|劳动合同|协议/.test(aiResponse);
             const hasEvidence = /欠条|结算单|工资单|微信|聊天记录|转账|录音|考勤|工牌|证人/.test(aiResponse);
             const evidenceStatus = hasContract ? '证据较充分' : (hasEvidence ? '已有初步证据，建议补强' : '证据不足，需补充');
             const evidenceDot = hasContract || hasEvidence ? 'bg-amber-500 shadow-[0_0_8px_#f59e0b]' : 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]';
+            const companyDot = company === "待补充" ? 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]';
+            const amountDot = amount === "待补充" ? 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]';
 
             list.innerHTML = `
                 <li class="flex items-center gap-2 text-zinc-300 animate-in fade-in duration-500">
-                    <span class="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_#f59e0b]"></span> 
-                    欠薪主体：${company}
+                    <span class="w-2 h-2 rounded-full ${companyDot}"></span>
+                    欠薪主体：${escapeHtml(company)}
                 </li>
                 <li class="flex items-center gap-2 text-zinc-300 animate-in fade-in duration-700">
-                    <span class="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_#f59e0b]"></span> 
+                    <span class="w-2 h-2 rounded-full ${amountDot}"></span>
                     欠薪金额：<span class="text-amber-500 font-bold">${amount}</span>
                 </li>
                 <li class="flex items-center gap-2 text-zinc-500 animate-in fade-in duration-1000">

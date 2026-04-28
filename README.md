@@ -15,7 +15,9 @@ Log/                        # 本地运行时聊天日志，不提交到 Git
 
 ## 本地运行
 
-1. 准备环境变量：
+HuXin 现在只保留两个启动脚本：Mac 用 `run_local.sh`，Windows 用 `run_local.bat`。它们只负责启动本机后端，不再启动 cpolar / Cloudflare 隧道。
+
+1. 第一次运行前准备环境变量：
 
 ```bash
 cp .env.example Code/.env
@@ -23,49 +25,27 @@ cp .env.example Code/.env
 
 把 `Code/.env` 里的 `DEEPSEEK_API_KEY` 改成你的真实密钥。现有本机 `Code/.env` 已被 `.gitignore` 保护，不会上传。
 
-2. 一键启动：
+2. Mac 启动后端：
 
 ```bash
 ./run_local.sh
 ```
 
-启动后访问 `http://127.0.0.1:8000`。健康检查地址是 `http://127.0.0.1:8000/api/health`。
-
-启动脚本会把 `Model/chroma_db` 复制到 `.runtime/chroma_db` 后再加载，避免 Chroma 运行时写入污染 Git 里保存的知识库快照。需要刷新运行库时，删除 `.runtime/chroma_db` 后重新启动即可。
-
-Windows 可以运行：
+Windows 启动后端：
 
 ```bat
 run_local.bat
 ```
 
-## GitHub Pages 与公网隧道
-
-GitHub Pages 继续使用仓库根目录的 `index.html`。页面里的 `PAGE_API_BASE_URL` 保留为当前公网后端地址；本地由 FastAPI 打开 `Code/Web/index.html` 时，会自动使用当前本地服务地址。
-
-公网访问需要一个活着的 HTTPS 隧道指向本机 8000 端口。推荐运行：
-
-```bash
-./run_public.sh
-```
-
-它会检查/启动本地后端，并用 Cloudflare Quick Tunnel 生成公开 HTTPS 后端地址。脚本会打印可以直接打开的 GitHub Pages 链接。
-
-公网隧道地址变化时，更新根目录 `index.html` 与 `Code/Web/index.html` 中的 `PAGE_API_BASE_URL`，或直接使用下面的 `api` 参数覆盖。
-
-也可以不改代码，直接用 `api` 参数临时指定新地址：
+3. 后端日志出现 `Uvicorn running on http://127.0.0.1:8000` 后，打开：
 
 ```text
-https://timemachinedmc.github.io/HuXin/?api=https://你的新地址.trycloudflare.com
+https://timemachinedmc.github.io/HuXin/
 ```
 
-页面会把这个地址保存到当前浏览器的 `localStorage`。如果要清除临时地址，在浏览器控制台运行：
+GitHub Pages 前端会默认连接你本机的 `http://127.0.0.1:8000`。健康检查地址是 `http://127.0.0.1:8000/api/health`。
 
-```js
-localStorage.removeItem("HUXIN_API_BASE_URL")
-```
-
-只在自己电脑本地调试时，直接访问 `http://127.0.0.1:8000` 最稳；打开 GitHub Pages 时，浏览器会走公网 HTTPS 隧道，不会自动连接你的本机后端。
+启动脚本会把 `Model/chroma_db` 复制到 `.runtime/chroma_db` 后再加载，避免 Chroma 运行时写入污染 Git 里保存的知识库快照。需要刷新运行库时，删除 `.runtime/chroma_db` 后重新启动即可。
 
 ## 重建法律知识库
 
