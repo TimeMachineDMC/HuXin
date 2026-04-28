@@ -1,0 +1,21 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Local environments and secrets
+.venv/
+venv/
+.env
+Code/.env
+
+# Runtime artifacts
+*.log
+Log/*.jsonl
+
+# Source documents can be private or bulky; keep the generated vector DB tracked separately.
+Data/

@@ -1,0 +1,17 @@
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-dotenv>=1.0
+openai>=1.60
+langchain-chroma>=0.2
+langchain-community>=0.3
+langchain-huggingface>=0.1
+langchain-text-splitters>=0.3
+sentence-transformers>=3.3
+chromadb>=0.6
+PyPDF2>=3.0
+docx2txt>=0.8
+easyocr>=1.7
+numpy>=1.26
+pillow>=10.0
+python-multipart>=0.0.20
+tqdm>=4.66
