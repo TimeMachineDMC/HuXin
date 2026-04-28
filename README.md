@@ -31,6 +31,8 @@ cp .env.example Code/.env
 
 启动后访问 `http://127.0.0.1:8000`。健康检查地址是 `http://127.0.0.1:8000/api/health`。
 
+启动脚本会把 `Model/chroma_db` 复制到 `.runtime/chroma_db` 后再加载，避免 Chroma 运行时写入污染 Git 里保存的知识库快照。需要刷新运行库时，删除 `.runtime/chroma_db` 后重新启动即可。
+
 Windows 可以运行：
 
 ```bat

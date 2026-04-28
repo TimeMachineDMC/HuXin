@@ -14,6 +14,7 @@ venv/
 Code/.env
 
 # Runtime artifacts
+.runtime/
 *.log
 Log/*.jsonl
 

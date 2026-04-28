@@ -15,4 +15,11 @@ if [ ! -f ".venv/.huxin_requirements_installed" ] || [ "requirements.txt" -nt ".
   touch .venv/.huxin_requirements_installed
 fi
 
+if [ -d "Model/chroma_db" ] && [ ! -d ".runtime/chroma_db" ]; then
+  mkdir -p .runtime
+  cp -R Model/chroma_db .runtime/chroma_db
+fi
+
+export CHROMA_DB_PATH="${CHROMA_DB_PATH:-.runtime/chroma_db}"
+
 python Code/dual_api_server.py
