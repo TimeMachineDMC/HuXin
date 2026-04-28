@@ -526,6 +526,18 @@
         const LOCAL_API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : window.location.origin;
         const apiFromUrl = new URLSearchParams(window.location.search).get("api");
         if (apiFromUrl) localStorage.setItem("HUXIN_API_BASE_URL", apiFromUrl);
+        const retiredApiHosts = [
+            "2f094c68.r6.cpolar.top",
+            "2f7b2b0c.r6.cpolar.top",
+            "pressed-august-valium-italic.trycloudflare.com",
+            "horses-jacksonville-find-attending.trycloudflare.com",
+            "raising-causes-appears-gst.trycloudflare.com",
+            "per-spend-sells-contributing.trycloudflare.com"
+        ];
+        const savedApiBase = localStorage.getItem("HUXIN_API_BASE_URL");
+        if (savedApiBase && retiredApiHosts.some(host => savedApiBase.includes(host))) {
+            localStorage.removeItem("HUXIN_API_BASE_URL");
+        }
         const configuredApiBase = window.HUXIN_API_BASE_URL || apiFromUrl || localStorage.getItem("HUXIN_API_BASE_URL");
         const API_BASE_URL = (configuredApiBase || (window.location.hostname.endsWith("github.io") ? PAGE_API_BASE_URL : LOCAL_API_BASE_URL)).replace(/\/+$/, "");
         const API_URL = `${API_BASE_URL}/api/chat`;
