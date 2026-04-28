@@ -41,9 +41,17 @@ run_local.bat
 
 ## GitHub Pages 与 cpolar
 
-GitHub Pages 继续使用仓库根目录的 `index.html`。页面里的 `PAGE_API_BASE_URL` 保留为 cpolar 后端地址；本地由 FastAPI 打开 `Code/Web/index.html` 时，会自动使用当前本地服务地址。
+GitHub Pages 继续使用仓库根目录的 `index.html`。页面里的 `PAGE_API_BASE_URL` 保留为当前公网后端地址；本地由 FastAPI 打开 `Code/Web/index.html` 时，会自动使用当前本地服务地址。
 
-cpolar 地址变化时，更新根目录 `index.html` 与 `Code/Web/index.html` 中的 `PAGE_API_BASE_URL` 即可。
+公网访问需要一个活着的 HTTPS 隧道指向本机 8000 端口。推荐运行：
+
+```bash
+./run_public.sh
+```
+
+它会检查/启动本地后端，并用 Cloudflare Quick Tunnel 生成公开 HTTPS 后端地址。脚本会打印可以直接打开的 GitHub Pages 链接。
+
+公网隧道地址变化时，更新根目录 `index.html` 与 `Code/Web/index.html` 中的 `PAGE_API_BASE_URL`，或直接使用下面的 `api` 参数覆盖。
 
 也可以不改代码，直接用 `api` 参数临时指定新地址：
 
