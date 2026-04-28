@@ -3,6 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.huxin.cloudflared.plist" >/dev/null 2>&1 || true
+
 for name in cloudflared backend; do
   pid_file=".runtime/${name}.pid"
   if [ -f "$pid_file" ]; then

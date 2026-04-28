@@ -43,6 +43,20 @@ if ! command -v cloudflared >/dev/null 2>&1; then
   fi
 fi
 
+stop_cloudflared_for_port() {
+  local pids
+  pids="$(pgrep -f "cloudflared tunnel --url http://localhost:${PORT}" || true)"
+  if [ -n "$pids" ]; then
+    echo "Stopping old Cloudflare quick tunnel process(es) for port ${PORT}: ${pids//$'\n'/ }"
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      [ "$pid" = "$$" ] && continue
+      kill "$pid" >/dev/null 2>&1 || true
+    done <<< "$pids"
+    sleep 2
+  fi
+}
+
 if [ -f "${RUNTIME_DIR}/cloudflared.pid" ]; then
   old_pid="$(cat "${RUNTIME_DIR}/cloudflared.pid" 2>/dev/null || true)"
   if [ -n "$old_pid" ] && kill -0 "$old_pid" >/dev/null 2>&1; then
@@ -59,10 +73,26 @@ if [ -f "${RUNTIME_DIR}/cloudflared.pid" ]; then
   fi
 fi
 
+stop_cloudflared_for_port
 : > "${RUNTIME_DIR}/cloudflared.log"
 echo "Starting Cloudflare quick tunnel..."
-nohup cloudflared tunnel --url "http://localhost:${PORT}" > "${RUNTIME_DIR}/cloudflared.log" 2>&1 &
+tunnel_output="${RUNTIME_DIR}/cloudflared.pipe"
+rm -f "$tunnel_output"
+mkfifo "$tunnel_output"
+
+cloudflared tunnel --protocol http2 --url "http://localhost:${PORT}" > "$tunnel_output" 2>&1 &
 echo $! > "${RUNTIME_DIR}/cloudflared.pid"
+tunnel_pid="$(cat "${RUNTIME_DIR}/cloudflared.pid")"
+
+tee "${RUNTIME_DIR}/cloudflared.log" < "$tunnel_output" &
+tee_pid=$!
+
+cleanup() {
+  kill "$tunnel_pid" >/dev/null 2>&1 || true
+  kill "$tee_pid" >/dev/null 2>&1 || true
+  rm -f "$tunnel_output"
+}
+trap cleanup EXIT INT TERM
 
 public_url=""
 for _ in $(seq 1 60); do
@@ -91,3 +121,7 @@ echo "https://timemachinedmc.github.io/HuXin/?api=${public_url}"
 echo
 echo "For Vercel, append the same api parameter to your Vercel URL."
 echo "Tunnel log: ${RUNTIME_DIR}/cloudflared.log"
+echo
+echo "Keep this script running. Press Ctrl-C to close the public tunnel."
+
+wait "$tunnel_pid"
