@@ -976,6 +976,9 @@
                             const dataStr = line.slice(6).trim();
                             if (dataStr === '[DONE]') {
                                 reasoningDiv.style.borderLeftColor = "#10b981";
+                                if (!fullReasoning) {
+                                    reasoningDiv.querySelector('.thought-content').innerText = "已完成本地法条检索与案情要素抽取。";
+                                }
                                 break;
                             }
                             try {
