@@ -4,7 +4,8 @@ cd /d "%~dp0"
 
 echo HuXin backend for Windows
 echo This starts the local API at http://127.0.0.1:8000
-echo After it finishes loading, open: https://timemachinedmc.github.io/HuXin/
+echo Same PC test: https://timemachinedmc.github.io/HuXin/?api=http://127.0.0.1:8000
+echo Other devices use the cpolar URL configured in index.html.
 echo.
 
 if "%HUXIN_PORT%"=="" set HUXIN_PORT=8000
@@ -18,7 +19,8 @@ if /I "%~1"=="stop" (
 powershell -NoProfile -Command "try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 http://127.0.0.1:%HUXIN_PORT%/api/health | Out-Null; exit 0 } catch { exit 1 }" >nul 2>nul
 if "%ERRORLEVEL%"=="0" (
     echo HuXin backend is already running at http://127.0.0.1:%HUXIN_PORT%
-    echo Open: https://timemachinedmc.github.io/HuXin/
+    echo Same PC test: https://timemachinedmc.github.io/HuXin/?api=http://127.0.0.1:%HUXIN_PORT%
+    echo Other devices use the cpolar URL configured in index.html.
     echo.
     echo Showing live backend logs. Press Ctrl-C to stop watching logs; backend keeps running.
     if exist ".runtime\backend-live.log" (

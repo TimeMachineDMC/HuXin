@@ -5,7 +5,8 @@ cd "$(dirname "$0")"
 
 echo "HuXin backend for macOS"
 echo "This starts the local API at http://127.0.0.1:8000"
-echo "After it finishes loading, open: https://timemachinedmc.github.io/HuXin/"
+echo "Same Mac test: https://timemachinedmc.github.io/HuXin/?api=http://127.0.0.1:8000"
+echo "Other devices use the cpolar URL configured in index.html."
 echo
 
 mkdir -p .runtime
@@ -26,7 +27,8 @@ fi
 
 if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 3 "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
   echo "HuXin backend is already running at http://127.0.0.1:${PORT}"
-  echo "Open: https://timemachinedmc.github.io/HuXin/"
+  echo "Same Mac test: https://timemachinedmc.github.io/HuXin/?api=http://127.0.0.1:${PORT}"
+  echo "Other devices use the cpolar URL configured in index.html."
   if [ ! -t 1 ]; then
     exit 0
   fi

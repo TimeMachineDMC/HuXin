@@ -15,7 +15,7 @@ Log/                        # 本地运行时聊天日志，不提交到 Git
 
 ## 本地运行
 
-HuXin 现在只保留两个启动脚本：Mac 用 `run_local.sh`，Windows 用 `run_local.bat`。它们只负责启动本机后端，不再启动 cpolar / Cloudflare 隧道。
+HuXin 现在只保留两个后端启动脚本：Mac 用 `run_local.sh`，Windows 用 `run_local.bat`。它们只负责把本机后端启动在 `http://127.0.0.1:8000`。
 
 1. 第一次运行前准备环境变量：
 
@@ -51,15 +51,35 @@ Windows：
 run_local.bat stop
 ```
 
-3. 后端日志出现 `Uvicorn running on http://127.0.0.1:8000` 后，打开：
+3. 后端日志出现 `Uvicorn running on http://127.0.0.1:8000` 后，本机测试可以打开：
 
 ```text
-https://timemachinedmc.github.io/HuXin/
+https://timemachinedmc.github.io/HuXin/?api=http://127.0.0.1:8000
 ```
 
-GitHub Pages 前端会默认连接你本机的 `http://127.0.0.1:8000`。健康检查地址是 `http://127.0.0.1:8000/api/health`。
+健康检查地址是 `http://127.0.0.1:8000/api/health`。
 
 启动脚本会把 `Model/chroma_db` 复制到 `.runtime/chroma_db` 后再加载，避免 Chroma 运行时写入污染 Git 里保存的知识库快照。需要刷新运行库时，删除 `.runtime/chroma_db` 后重新启动即可。
+
+## GitHub Pages 与 cpolar
+
+GitHub Pages 只是静态前端，不能直接运行 Python 后端。iPhone、Win11 或任何不在后端本机上的设备打开 Pages 时，必须通过公网 HTTPS 后端访问，也就是 cpolar 这一类隧道。
+
+当前前端默认公网后端写在 `index.html` 和 `Code/Web/index.html` 顶部脚本区：
+
+```js
+const PAGE_API_BASE_URL = "https://7de19a52.r39.cpolar.top";
+```
+
+以后 cpolar 重新分配域名时，只需要把上面这一行改成新的 `https://...cpolar.top`，提交并推送到 GitHub。也可以不改文件，临时用 URL 参数覆盖：
+
+```text
+https://timemachinedmc.github.io/HuXin/?api=https://新的地址.cpolar.top
+```
+
+cpolar 隧道必须指向运行后端的同一台电脑上的 `http://localhost:8000` 或 `http://127.0.0.1:8000`。如果公网地址打开后提示 `Tunnel unavailable`，通常表示 cpolar 客户端没有运行、隧道不在这台电脑上，或没有映射到 8000 端口；这时本机 `http://127.0.0.1:8000/api/health` 可能仍然是正常的。
+
+为了方便调试，Pages 会先尝试 cpolar；如果你是在后端本机打开 Pages 且 cpolar 暂不可用，前端会自动回退到 `http://127.0.0.1:8000`。其他设备没有这个本机后端，所以仍然需要 cpolar 正常在线。
 
 ## 登录账号
 

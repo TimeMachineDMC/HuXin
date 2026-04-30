@@ -589,19 +589,51 @@
     </main>
 
     <script>
-        // GitHub Pages 直接连接本机后端。先运行 run_local.sh / run_local.bat，再打开页面。
-        const LOCAL_API_BASE_URL = window.location.hostname.endsWith("github.io") || window.location.protocol === "file:"
-            ? "http://127.0.0.1:8000"
-            : window.location.origin;
+        // GitHub Pages 给其他设备使用时必须走公网 HTTPS 后端。cpolar 地址变化后，只改下面这一行。
+        const PAGE_API_BASE_URL = "https://7de19a52.r39.cpolar.top";
+        const LOCAL_BROWSER_API_BASE_URL = "http://127.0.0.1:8000";
+        const LOCAL_API_BASE_URL = window.location.protocol === "file:" ? LOCAL_BROWSER_API_BASE_URL : window.location.origin;
         const apiFromUrl = new URLSearchParams(window.location.search).get("api");
         const configuredApiBase = window.HUXIN_API_BASE_URL || apiFromUrl;
-        const API_BASE_URL = (configuredApiBase || LOCAL_API_BASE_URL).replace(/\/+$/, "");
-        const API_URL = `${API_BASE_URL}/api/chat`;
-        const UPLOAD_URL = `${API_BASE_URL}/api/upload`;
-        const EXPORT_DOCX_URL = `${API_BASE_URL}/api/export-docx`;
-        const SUPPORT_URL = `${API_BASE_URL}/api/human-support`;
-        const CASE_SUBMIT_URL = `${API_BASE_URL}/api/case-submit`;
-        const ADMIN_RECORDS_URL = `${API_BASE_URL}/api/admin/records`;
+        let API_BASE_URL = (configuredApiBase || (window.location.hostname.endsWith("github.io") ? PAGE_API_BASE_URL : LOCAL_API_BASE_URL)).replace(/\/+$/, "");
+
+        function apiEndpoint(path) {
+            return `${API_BASE_URL}${path}`;
+        }
+
+        async function isHealthyApiBase(baseUrl) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 2500);
+            try {
+                const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/api/health`, {
+                    signal: controller.signal,
+                    cache: 'no-store'
+                });
+                if (!response.ok) return false;
+                const data = await response.json();
+                return data.status === "ok";
+            } catch (error) {
+                return false;
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        const apiBaseReady = (async () => {
+            if (configuredApiBase || !window.location.hostname.endsWith("github.io")) return;
+            const publicReady = await isHealthyApiBase(PAGE_API_BASE_URL);
+            if (publicReady) return;
+            const localReady = await isHealthyApiBase(LOCAL_BROWSER_API_BASE_URL);
+            if (localReady) {
+                API_BASE_URL = LOCAL_BROWSER_API_BASE_URL;
+                console.info(`公网后端暂不可用，已切换到本机后端：${API_BASE_URL}`);
+            }
+        })();
+
+        async function apiFetch(path, options) {
+            await apiBaseReady;
+            return fetch(apiEndpoint(path), options);
+        }
 
         const views = ['view-login', 'view-home', 'view-chat', 'view-doc', 'view-status', 'view-admin'];
         const stepViewMap = {
@@ -805,7 +837,7 @@
             if (meta) meta.innerText = "正在向后端登记预审提交记录...";
 
             try {
-                const response = await fetch(CASE_SUBMIT_URL, {
+                const response = await apiFetch('/api/case-submit', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -838,7 +870,7 @@
 
         function simulateVoiceInput() {
             const input = document.getElementById('user-input');
-            const fakeVoice = "去年10月份我在西单德拉曼公司那个工地干木工。干到今年1月份完工了老板跑了，差我两万五，现在手里就一张欠条，咋办？";
+            const fakeVoice = "去年10月份我在西单德拉曼公司那个工地干木工。干到今年1月份完工了老板跑了，差我两万五千块，现在手里就一张欠条，咋办？";
             let i = 0;
             input.value = "";
             input.placeholder = "正在录音识别中...";
@@ -1029,7 +1061,7 @@
             }
 
             try {
-                const response = await fetch(EXPORT_DOCX_URL, {
+                const response = await apiFetch('/api/export-docx', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title, html, user_name: currentUser.name, phone: currentUser.phone })
@@ -1085,7 +1117,7 @@
             }
 
             try {
-                const response = await fetch(SUPPORT_URL, {
+                const response = await apiFetch('/api/human-support', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1124,7 +1156,7 @@
 
             tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-zinc-500">正在读取后端记录...</td></tr>`;
             try {
-                const response = await fetch(`${ADMIN_RECORDS_URL}?days=7`);
+                const response = await apiFetch('/api/admin/records?days=7');
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
 
@@ -1239,7 +1271,7 @@
 
                 try {
                     // 发起真实上传
-                    const res = await fetch(UPLOAD_URL, {
+                    const res = await apiFetch('/api/upload', {
                         method: 'POST',
                         body: formData
                     });
@@ -1325,7 +1357,7 @@
             let fullContent = "";
 
             try {
-                const response = await fetch(API_URL, {
+                const response = await apiFetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1422,7 +1454,54 @@
             return digits[text] || 0;
         }
 
+        function parseChineseAmountNumber(text) {
+            const normalized = String(text || '').replace(/[零〇]/g, '零').replace(/元|块|人民币|整|\s/g, '');
+            const digits = { '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
+            const units = { '十': 10, '百': 100, '千': 1000 };
+
+            const shortWan = normalized.match(/^([一二两三四五六七八九十百千]+)万([一二两三四五六七八九])$/);
+            if (shortWan) {
+                return parseChineseAmountNumber(shortWan[1]) * 10000 + digits[shortWan[2]] * 1000;
+            }
+
+            const shortThousand = normalized.match(/^([一二两三四五六七八九])千([一二两三四五六七八九])$/);
+            if (shortThousand) {
+                return digits[shortThousand[1]] * 1000 + digits[shortThousand[2]] * 100;
+            }
+
+            const shortHundred = normalized.match(/^([一二两三四五六七八九])百([一二两三四五六七八九])$/);
+            if (shortHundred) {
+                return digits[shortHundred[1]] * 100 + digits[shortHundred[2]] * 10;
+            }
+
+            const [wanPart, restPart] = normalized.split('万');
+            let total = 0;
+            let sectionText = restPart === undefined ? wanPart : wanPart;
+            if (restPart !== undefined) {
+                total += parseChineseAmountNumber(wanPart) * 10000;
+                sectionText = restPart;
+            }
+
+            let section = 0;
+            let number = 0;
+            for (const ch of sectionText) {
+                if (digits[ch] !== undefined) {
+                    number = digits[ch];
+                } else if (units[ch]) {
+                    section += (number || 1) * units[ch];
+                    number = 0;
+                }
+            }
+            return total + section + number;
+        }
+
         function extractAmount(text) {
+            const chineseMoney = text.match(/([一二两三四五六七八九十百千万零〇]{2,12})\s*(?:元|块|人民币|整)?/);
+            if (chineseMoney && /万|千|百|十/.test(chineseMoney[1])) {
+                const amount = parseChineseAmountNumber(chineseMoney[1]);
+                if (amount >= 1000) return formatMoney(amount);
+            }
+
             const digitWan = text.match(/(\d+(?:\.\d+)?)\s*万(?:\s*(\d{1,4}))?/);
             if (digitWan) {
                 return formatMoney(Number(digitWan[1]) * 10000 + Number(digitWan[2] || 0));
@@ -1431,13 +1510,6 @@
             const digitYuan = text.match(/(\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{1,2})?\s*[元块]/);
             if (digitYuan) {
                 return formatMoney(Number(digitYuan[1].replace(/,/g, '')));
-            }
-
-            const chineseWan = text.match(/([一二两三四五六七八九十]+)万([一二两三四五六七八九])?/);
-            if (chineseWan) {
-                const base = parseSimpleChineseNumber(chineseWan[1]) * 10000;
-                const tail = chineseWan[2] ? parseSimpleChineseNumber(chineseWan[2]) * 1000 : 0;
-                return formatMoney(base + tail);
             }
 
             return "待补充";
