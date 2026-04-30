@@ -37,6 +37,20 @@ Windows 启动后端：
 run_local.bat
 ```
 
+如果后端已经在运行，脚本会直接显示实时后端日志。浏览器里发起 AI 研判、文书导出、提交预审、人工协助请求时，终端会同步打印记录。此时按 `Ctrl-C` 只是停止看日志，不会关闭后端。
+
+关闭后端：
+
+```bash
+./run_local.sh stop
+```
+
+Windows：
+
+```bat
+run_local.bat stop
+```
+
 3. 后端日志出现 `Uvicorn running on http://127.0.0.1:8000` 后，打开：
 
 ```text
@@ -46,6 +60,26 @@ https://timemachinedmc.github.io/HuXin/
 GitHub Pages 前端会默认连接你本机的 `http://127.0.0.1:8000`。健康检查地址是 `http://127.0.0.1:8000/api/health`。
 
 启动脚本会把 `Model/chroma_db` 复制到 `.runtime/chroma_db` 后再加载，避免 Chroma 运行时写入污染 Git 里保存的知识库快照。需要刷新运行库时，删除 `.runtime/chroma_db` 后重新启动即可。
+
+## 登录账号
+
+农民工端：
+
+```text
+133 3107 4710
+```
+
+管理员看板：
+
+```text
+188 1193 9453
+```
+
+验证码保持为：
+
+```text
+8888
+```
 
 ## 重建法律知识库
 

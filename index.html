@@ -207,10 +207,10 @@
 
         <div id="user-profile" class="hidden flex items-center gap-4">
             <div class="text-right">
-                <p class="text-xs text-zinc-300 font-bold">王某某</p>
-                <p class="text-[10px] text-zinc-500 font-mono">138****0044</p>
+                <p id="profile-name" class="text-xs text-zinc-300 font-bold">王某某</p>
+                <p id="profile-phone" class="text-[10px] text-zinc-500 font-mono">133****4710</p>
             </div>
-            <div
+            <div id="profile-avatar"
                 class="h-8 w-8 rounded-full bg-zinc-800 border border-amber-500/30 flex items-center justify-center text-amber-500 font-bold">
                 王
             </div>
@@ -251,13 +251,26 @@
     </div>
 
     <main id="view-login" class="view-section flex items-center justify-center min-h-[70vh]">
-        <div class="bg-zinc-900/50 p-8 rounded-2xl border border-white/5 shadow-2xl w-96 backdrop-blur-sm text-center">
+        <div class="bg-zinc-900/50 p-8 rounded-2xl border border-white/5 shadow-2xl w-[28rem] max-w-[92vw] backdrop-blur-sm text-center">
             <h2 class="text-xl font-bold text-white mb-2">维权通道登录</h2>
-            <p class="text-xs text-zinc-500 mb-8">实名认证保障您的合法权益</p>
+            <p class="text-xs text-zinc-500 mb-6">实名认证保障您的合法权益</p>
 
-            <input type="text" value="138 1119 0044" disabled
+            <div class="grid grid-cols-1 gap-3 mb-5 text-left">
+                <button type="button" id="login-worker-card" onclick="selectLoginAccount('worker')"
+                    class="login-account border border-amber-500 bg-amber-500/10 rounded-xl px-4 py-3 transition-colors">
+                    <p class="text-sm font-bold text-zinc-100">王某某 · 农民工端</p>
+                    <p class="text-xs text-zinc-500 mt-1">133 3107 4710</p>
+                </button>
+                <button type="button" id="login-admin-card" onclick="selectLoginAccount('admin')"
+                    class="login-account border border-zinc-800 bg-zinc-950 rounded-xl px-4 py-3 transition-colors hover:border-zinc-600">
+                    <p class="text-sm font-bold text-zinc-100">管理员 · 平台看板</p>
+                    <p class="text-xs text-zinc-500 mt-1">188 1193 9453</p>
+                </button>
+            </div>
+
+            <input id="login-phone" type="text" value="133 3107 4710" disabled
                 class="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-center py-3 rounded-xl mb-4 focus:outline-none">
-            <input type="text" value="8888" disabled
+            <input id="login-code" type="text" value="8888"
                 class="w-full bg-zinc-950 border border-zinc-800 text-amber-500 font-mono tracking-[0.5em] text-center py-3 rounded-xl mb-8 focus:outline-none">
 
             <button type="button" onclick="doLogin()"
@@ -268,7 +281,7 @@
     </main>
 
     <main id="view-home" class="view-section max-w-4xl mx-auto p-6 mt-10" style="display: none;">
-        <h2 class="text-2xl font-bold text-white mb-2">您好，王某某</h2>
+        <h2 id="home-title" class="text-2xl font-bold text-white mb-2">您好，王某某</h2>
         <p class="text-sm text-zinc-400 mb-10">请选择您需要办理的业务。Justitia 引擎将全程辅助您梳理证据并生成法律文书。</p>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -327,10 +340,11 @@
                     </div>
 
                     <div class="mt-4 pt-4 border-t border-white/5">
-                        <button onclick="alert('正在为您呼叫西城法律援助中心志愿者...')"
+                        <button type="button" onclick="requestHumanSupport('phase2')"
                             class="w-full text-xs text-zinc-500 hover:text-amber-500 py-2 transition-colors flex items-center justify-center gap-1">
                             🙋 证据不足？转接人工援助
                         </button>
+                        <p id="phase2-support-status" class="mt-2 text-[11px] leading-relaxed text-zinc-500"></p>
                     </div>
                 </div>
             </div>
@@ -483,6 +497,7 @@
                     <span class="text-xs text-zinc-500 mr-2">智能预收案号：</span>
                     <span class="text-amber-500 font-mono font-bold tracking-widest">京西检民支预〔2026〕0108号</span>
                 </div>
+                <p id="case-submit-meta" class="text-xs text-zinc-500 mt-3"></p>
             </div>
 
             <div class="relative pl-6 border-l-2 border-zinc-800 space-y-8 mb-12 ml-4">
@@ -512,10 +527,63 @@
                     class="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-bold rounded-xl transition-colors border border-transparent hover:border-zinc-600">
                     返回工作台
                 </button>
-                <button onclick="alert('正在为您接通承办检察官在线咨询通道...')"
+                <button type="button" onclick="requestHumanSupport('phase4')"
                     class="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-xl transition-all shadow-lg flex items-center gap-2">
                     📞 联系承办人 (转人工)
                 </button>
+            </div>
+            <div id="phase4-support-status"
+                class="mt-6 rounded-xl border border-white/10 bg-zinc-950/80 px-4 py-3 text-xs text-zinc-400 hidden">
+            </div>
+        </div>
+    </main>
+
+    <main id="view-admin" class="view-section max-w-6xl mx-auto p-6 mt-8" style="display: none;">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-white mb-2">平台记录看板</h2>
+                <p class="text-sm text-zinc-400">近七天 AI 研判、文书导出、预审提交与人工协助请求。</p>
+            </div>
+            <button type="button" onclick="loadAdminRecords()"
+                class="self-start md:self-auto bg-zinc-800 border border-zinc-700 text-zinc-200 px-4 py-2 rounded-lg text-sm hover:border-amber-500/50 transition-colors">
+                刷新记录
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-zinc-900/70 border border-white/5 rounded-xl p-4">
+                <p class="text-xs text-zinc-500 mb-2">记录总数</p>
+                <p id="admin-total-count" class="text-2xl font-bold text-white">0</p>
+            </div>
+            <div class="bg-zinc-900/70 border border-white/5 rounded-xl p-4">
+                <p class="text-xs text-zinc-500 mb-2">人工待跟进</p>
+                <p id="admin-pending-count" class="text-2xl font-bold text-amber-500">0</p>
+            </div>
+            <div class="bg-zinc-900/70 border border-white/5 rounded-xl p-4">
+                <p class="text-xs text-zinc-500 mb-2">最近同步</p>
+                <p id="admin-last-sync" class="text-sm font-mono text-zinc-300">--</p>
+            </div>
+        </div>
+
+        <div class="bg-zinc-900/70 border border-white/5 rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-left text-sm">
+                    <thead class="bg-zinc-950/80 text-xs text-zinc-500 uppercase tracking-wider">
+                        <tr>
+                            <th class="px-4 py-3">时间</th>
+                            <th class="px-4 py-3">阶段</th>
+                            <th class="px-4 py-3">农民工</th>
+                            <th class="px-4 py-3">问题 / 摘要</th>
+                            <th class="px-4 py-3">解决情况</th>
+                            <th class="px-4 py-3">处理人</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-records-body" class="divide-y divide-white/5 text-zinc-300">
+                        <tr>
+                            <td colspan="6" class="px-4 py-8 text-center text-zinc-500">登录后自动加载。</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </main>
@@ -531,8 +599,11 @@
         const API_URL = `${API_BASE_URL}/api/chat`;
         const UPLOAD_URL = `${API_BASE_URL}/api/upload`;
         const EXPORT_DOCX_URL = `${API_BASE_URL}/api/export-docx`;
+        const SUPPORT_URL = `${API_BASE_URL}/api/human-support`;
+        const CASE_SUBMIT_URL = `${API_BASE_URL}/api/case-submit`;
+        const ADMIN_RECORDS_URL = `${API_BASE_URL}/api/admin/records`;
 
-        const views = ['view-login', 'view-home', 'view-chat', 'view-doc', 'view-status'];
+        const views = ['view-login', 'view-home', 'view-chat', 'view-doc', 'view-status', 'view-admin'];
         const stepViewMap = {
             1: 'view-home',
             2: 'view-chat',
@@ -547,6 +618,14 @@
         };
         let currentStep = 0;
         let maxUnlockedStep = 0;
+        const accounts = {
+            worker: { role: 'worker', name: '王某某', phone: '133 3107 4710', avatar: '王' },
+            admin: { role: 'admin', name: '管理员', phone: '188 1193 9453', avatar: '管' }
+        };
+        let selectedLoginRole = 'worker';
+        let currentUser = accounts.worker;
+        let lastUserQuestion = "";
+        let lastEvidenceSnapshot = { subject: "待补充", amount: "待补充", status: "证据不足，需补充" };
 
         function switchView(targetId) {
             // 隐藏所有视图
@@ -576,10 +655,48 @@
             updateNavAvailability();
         }
 
+        function selectLoginAccount(role) {
+            selectedLoginRole = role;
+            const account = accounts[role];
+            document.getElementById('login-phone').value = account.phone;
+            document.querySelectorAll('.login-account').forEach(btn => {
+                btn.classList.remove('border-amber-500', 'bg-amber-500/10');
+                btn.classList.add('border-zinc-800', 'bg-zinc-950');
+            });
+            const active = document.getElementById(role === 'admin' ? 'login-admin-card' : 'login-worker-card');
+            active.classList.remove('border-zinc-800', 'bg-zinc-950');
+            active.classList.add('border-amber-500', 'bg-amber-500/10');
+        }
+
+        function updateIdentityDisplay() {
+            document.getElementById('profile-name').innerText = currentUser.name;
+            document.getElementById('profile-phone').innerText = currentUser.phone.replace(/^(\d{3})\s?(\d{4})\s?(\d{4})$/, '$1****$3');
+            document.getElementById('profile-avatar').innerText = currentUser.avatar;
+            const homeTitle = document.getElementById('home-title');
+            if (homeTitle) homeTitle.innerText = `您好，${currentUser.name}`;
+        }
+
         function doLogin() {
+            const code = document.getElementById('login-code').value.trim();
+            if (code !== '8888') {
+                alert('验证码错误，请输入 8888。');
+                return;
+            }
+
+            currentUser = accounts[selectedLoginRole];
+            updateIdentityDisplay();
             document.getElementById('user-profile').classList.remove('hidden');
+
+            if (currentUser.role === 'admin') {
+                document.getElementById('progress-container').classList.add('hidden');
+                document.getElementById('main-nav').classList.add('hidden');
+                switchView('view-admin');
+                loadAdminRecords();
+                return;
+            }
+
             document.getElementById('progress-container').classList.remove('hidden');
-            document.getElementById('main-nav').classList.remove('hidden'); // 显示导航栏
+            document.getElementById('main-nav').classList.remove('hidden');
             switchView('view-home');
             updateProgress(1);
         }
@@ -646,6 +763,11 @@
         }
 
         function goHomeFromBrand() {
+            if (currentUser.role === 'admin') {
+                switchView('view-admin');
+                loadAdminRecords();
+                return;
+            }
             if (maxUnlockedStep > 0) {
                 goToStep(1);
             } else {
@@ -671,13 +793,35 @@
             }
         }
 
-        function submitToProcuratorate() {
+        async function submitToProcuratorate() {
             if (maxUnlockedStep < 3) {
                 alert("请先完成智能研判并生成文书，再提交检察支持起诉申请。");
                 return;
             }
             switchView('view-status');
             updateProgress(4); // 进度条走到最后一步
+
+            const meta = document.getElementById('case-submit-meta');
+            if (meta) meta.innerText = "正在向后端登记预审提交记录...";
+
+            try {
+                const response = await fetch(CASE_SUBMIT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_name: currentUser.name,
+                        phone: currentUser.phone,
+                        case_summary: lastUserQuestion || "用户提交支持起诉预审",
+                        evidence_subject: lastEvidenceSnapshot.subject,
+                        evidence_amount: lastEvidenceSnapshot.amount,
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || data.message || `HTTP ${response.status}`);
+                if (meta) meta.innerText = data.message || `后端已登记，编号 ${data.request_id}`;
+            } catch (error) {
+                if (meta) meta.innerText = `后端登记失败：${error.message || '请检查服务是否运行'}`;
+            }
         }
 
         function openChat(mode) {
@@ -888,7 +1032,7 @@
                 const response = await fetch(EXPORT_DOCX_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, html })
+                    body: JSON.stringify({ title, html, user_name: currentUser.name, phone: currentUser.phone })
                 });
 
                 if (!response.ok) {
@@ -921,6 +1065,101 @@
         function backToChat() {
             switchView('view-chat');
             updateProgress(2, { unlock: false }); // 视图回退，已解锁阶段保留
+        }
+
+        function buildCaseSummary() {
+            const parts = [];
+            if (lastUserQuestion) parts.push(`最近问题：${lastUserQuestion}`);
+            if (lastEvidenceSnapshot.subject !== "待补充") parts.push(`欠薪主体：${lastEvidenceSnapshot.subject}`);
+            if (lastEvidenceSnapshot.amount !== "待补充") parts.push(`欠薪金额：${lastEvidenceSnapshot.amount}`);
+            parts.push(`证据链：${lastEvidenceSnapshot.status}`);
+            return parts.join("；");
+        }
+
+        async function requestHumanSupport(phase) {
+            const isPhase4 = phase === 'phase4';
+            const statusEl = document.getElementById(isPhase4 ? 'phase4-support-status' : 'phase2-support-status');
+            if (statusEl) {
+                statusEl.classList.remove('hidden');
+                statusEl.innerText = "正在向后端发送人工协助请求...";
+            }
+
+            try {
+                const response = await fetch(SUPPORT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phase,
+                        user_name: currentUser.name,
+                        phone: currentUser.phone,
+                        latest_question: lastUserQuestion || userInput?.value?.trim() || "",
+                        case_summary: buildCaseSummary(),
+                        evidence_subject: lastEvidenceSnapshot.subject,
+                        evidence_amount: lastEvidenceSnapshot.amount,
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || data.message || `HTTP ${response.status}`);
+
+                const message = `${data.message} 当前状态：${data.status}；处理人：${data.assignee}`;
+                if (statusEl) statusEl.innerText = message;
+                if (!isPhase4 && typeof appendMessage === "function") {
+                    appendMessage('ai', `**人工协助已发起**\n\n${message}`);
+                }
+            } catch (error) {
+                const message = `人工协助请求失败：${error.message || '请确认后端服务正在运行。'}`;
+                if (statusEl) statusEl.innerText = message;
+                if (!isPhase4 && typeof appendMessage === "function") {
+                    appendMessage('ai', message);
+                }
+            }
+        }
+
+        async function loadAdminRecords() {
+            const tbody = document.getElementById('admin-records-body');
+            const totalEl = document.getElementById('admin-total-count');
+            const pendingEl = document.getElementById('admin-pending-count');
+            const syncEl = document.getElementById('admin-last-sync');
+            if (!tbody) return;
+
+            tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-zinc-500">正在读取后端记录...</td></tr>`;
+            try {
+                const response = await fetch(`${ADMIN_RECORDS_URL}?days=7`);
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+
+                const records = data.records || [];
+                const pending = records.filter(row => /待/.test(row.status || "")).length;
+                totalEl.innerText = records.length;
+                pendingEl.innerText = pending;
+                syncEl.innerText = new Date().toLocaleString('zh-CN', { hour12: false });
+
+                if (!records.length) {
+                    tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-zinc-500">近七天暂无记录。</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = records.map(row => `
+                    <tr class="hover:bg-zinc-800/40">
+                        <td class="px-4 py-3 whitespace-nowrap text-xs text-zinc-500">${escapeHtml(row.timestamp || "")}</td>
+                        <td class="px-4 py-3 whitespace-nowrap">${escapeHtml(row.stage || "")}</td>
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            <div class="font-bold text-zinc-100">${escapeHtml(row.farmer_name || "")}</div>
+                            <div class="text-xs text-zinc-500">${escapeHtml(row.phone || "")}</div>
+                        </td>
+                        <td class="px-4 py-3 min-w-[18rem]">
+                            <div class="line-clamp-2">${escapeHtml(row.question || row.summary || "")}</div>
+                            ${row.request_id ? `<div class="text-[11px] text-amber-500 mt-1">编号：${escapeHtml(row.request_id)}</div>` : ""}
+                        </td>
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            <span class="rounded-full px-2 py-1 text-xs ${/待/.test(row.status || "") ? 'bg-amber-500/10 text-amber-400' : 'bg-green-500/10 text-green-400'}">${escapeHtml(row.status || "已记录")}</span>
+                        </td>
+                        <td class="px-4 py-3 whitespace-nowrap text-zinc-400">${escapeHtml(row.assignee || "")}</td>
+                    </tr>
+                `).join("");
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-red-300">读取失败：${escapeHtml(error.message || '请确认后端服务正在运行。')}</td></tr>`;
+            }
         }
 
 
@@ -1072,6 +1311,7 @@
                     finalPrompt += `---文件名：${file.name}---\n证据文字内容：\n${file.content}\n`;
                 });
             }
+            lastUserQuestion = rawInput || finalPrompt;
             updateRealEvidence(finalPrompt);
 
             await appendMessage('user', rawInput || `已上传 ${attachedFiles.length} 份证据`);
@@ -1091,7 +1331,9 @@
                     body: JSON.stringify({
                         query: finalPrompt, // 发送带真实证据文字的 Prompt
                         history: chatHistory,
-                        stream: true
+                        stream: true,
+                        user_name: currentUser.name,
+                        phone: currentUser.phone
                     })
                 });
 
@@ -1259,6 +1501,7 @@
             const evidenceDot = hasContract || hasEvidence ? 'bg-amber-500 shadow-[0_0_8px_#f59e0b]' : 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]';
             const companyDot = company === "待补充" ? 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]';
             const amountDot = amount === "待补充" ? 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]';
+            lastEvidenceSnapshot = { subject: company, amount, status: evidenceStatus };
 
             list.innerHTML = `
                 <li class="flex items-center gap-2 text-zinc-300 animate-in fade-in duration-500">

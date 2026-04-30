@@ -2,7 +2,7 @@ import io
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List
 from urllib.parse import quote
@@ -47,6 +47,7 @@ def project_path_from_env(name: str, default: Path) -> Path:
 
 DB_SAVE_PATH = project_path_from_env("CHROMA_DB_PATH", PROJECT_ROOT / "Model" / "chroma_db")
 LOG_FILE_PATH = project_path_from_env("CHAT_LOG_PATH", PROJECT_ROOT / "Log" / "justitia_chat_logs.jsonl")
+EVENT_LOG_PATH = project_path_from_env("EVENT_LOG_PATH", PROJECT_ROOT / "Log" / "platform_events.jsonl")
 SERVER_HOST = os.getenv("HUXIN_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("HUXIN_PORT", "8000"))
 
@@ -111,22 +112,54 @@ def run_ocr(image_np: np.ndarray) -> tuple[str, float | None]:
     confidence = round(sum(scores) / len(scores), 4) if scores else None
     return "\n".join(lines), confidence
 
-def save_chat_log(query: str, reasoning: str, answer: str, sources: list):
+def now_text() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def backend_log(event: str, detail: str = ""):
+    suffix = f" | {detail}" if detail else ""
+    print(f"[{now_text()}] {event}{suffix}", flush=True)
+
+
+def append_jsonl(path: Path, payload: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def record_platform_event(event_type: str, payload: dict):
+    event = {
+        "timestamp": now_text(),
+        "event_type": event_type,
+        **payload,
+    }
+    try:
+        append_jsonl(EVENT_LOG_PATH, event)
+    except Exception as e:
+        backend_log("Event Log Error", str(e))
+
+    preview = json.dumps(payload, ensure_ascii=False)
+    backend_log(f"EVENT {event_type}", preview[:600])
+
+
+def save_chat_log(query: str, reasoning: str, answer: str, sources: list, user_name: str = "王某某", phone: str = "133 3107 4710"):
     """Save chat history and reasoning to JSONL format."""
     log_data = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": now_text(),
+        "user_name": user_name,
+        "phone": phone,
         "user_query": query,
         "justitia_thought": reasoning,
         "justitia_answer": answer,
-        "reference_sources": [s.get("filename", "Unknown File") for s in sources]
+        "reference_sources": [s.get("filename", "Unknown File") for s in sources],
+        "status": "AI 已答复",
     }
     
     try:
-        LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with LOG_FILE_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
+        append_jsonl(LOG_FILE_PATH, log_data)
+        backend_log("PHASE2 AI_CHAT_SAVED", f"{user_name}({phone}) | {query[:120]}")
     except Exception as e:
-        print(f"[Log Error]: {str(e)}")
+        backend_log("Log Error", str(e))
 
 print(f"Loading vector model and local legal database from {DB_SAVE_PATH}...")
 try:
@@ -153,6 +186,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def add_private_network_access_header(request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
+
 @app.get("/api/health")
 async def health_check():
     return {
@@ -172,6 +213,8 @@ class ChatRequest(BaseModel):
     top_k: int = 3
     score_threshold: float = 1.2
     mode: str = "spark"
+    user_name: str = "王某某"
+    phone: str = "133 3107 4710"
 
 class SourceItem(BaseModel):
     filename: str
@@ -185,6 +228,26 @@ class ChatResponse(BaseModel):
 class DocExportRequest(BaseModel):
     title: str = "护薪法律文书"
     html: str
+    user_name: str = "王某某"
+    phone: str = "133 3107 4710"
+
+
+class HumanSupportRequest(BaseModel):
+    phase: str
+    user_name: str = "王某某"
+    phone: str = "133 3107 4710"
+    latest_question: str = ""
+    case_summary: str = ""
+    evidence_subject: str = ""
+    evidence_amount: str = ""
+
+
+class CaseSubmitRequest(BaseModel):
+    user_name: str = "王某某"
+    phone: str = "133 3107 4710"
+    case_summary: str = ""
+    evidence_subject: str = ""
+    evidence_amount: str = ""
 
 
 def safe_filename(title: str) -> str:
@@ -297,6 +360,48 @@ def build_docx_bytes(title: str, html: str) -> bytes:
     buffer.seek(0)
     return buffer.getvalue()
 
+
+def read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+
+    rows = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return rows
+
+
+def parse_timestamp(value: str) -> datetime | None:
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(value[:19], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def make_request_id(prefix: str = "HX") -> str:
+    return f"{prefix}{datetime.now().strftime('%Y%m%d%H%M%S%f')[:17]}"
+
+
+def phase_label(phase: str) -> str:
+    labels = {
+        "phase2": "第二阶段人工援助",
+        "phase4": "第四阶段承办联系",
+        "doc": "第三阶段文书导出",
+        "submit": "第四阶段提交预审",
+    }
+    return labels.get(phase, phase or "平台记录")
+
 def engine_error_message(error: Exception) -> str:
     raw = str(error)
     if "401" in raw or "Authentication Fails" in raw or "invalid" in raw.lower() and "api key" in raw.lower():
@@ -340,7 +445,10 @@ async def chat_endpoint(request: ChatRequest):
 
     selected_model = "deepseek-reasoner" if request.mode == "prism" else "deepseek-chat"
     
-    print(f"\n[Request Received] Query: {request.query} | Engine: {request.mode.upper()} ({selected_model})")
+    backend_log(
+        "PHASE2 AI_CHAT_REQUEST",
+        f"{request.user_name}({request.phone}) | {request.query[:300]} | Engine: {request.mode.upper()} ({selected_model})"
+    )
     
     # Keywords specific to labor disputes and wage protection
     legal_keywords = [
@@ -455,7 +563,9 @@ async def chat_endpoint(request: ChatRequest):
                     query=request.query,
                     reasoning=accumulated_reasoning,
                     answer=accumulated_content,
-                    sources=source_items
+                    sources=source_items,
+                    user_name=request.user_name,
+                    phone=request.phone,
                 )
                 
             yield "data: [DONE]\n\n"
@@ -479,7 +589,7 @@ async def chat_endpoint(request: ChatRequest):
             full_reasoning = ""
             engine_error = engine_error_message(e)
 
-        save_chat_log(request.query, full_reasoning, full_answer, source_items)
+        save_chat_log(request.query, full_reasoning, full_answer, source_items, request.user_name, request.phone)
 
         payload = {"answer": full_answer, "sources": source_items, "reasoning": full_reasoning}
         if engine_error:
@@ -491,6 +601,15 @@ async def export_docx(payload: DocExportRequest):
     title = safe_filename(payload.title)
     if not payload.html.strip():
         raise HTTPException(status_code=400, detail="文书内容为空，无法导出")
+
+    record_platform_event("document_exported", {
+        "stage": phase_label("doc"),
+        "user_name": payload.user_name,
+        "phone": payload.phone,
+        "question": title,
+        "status": "已生成文书",
+        "summary": f"导出文书：{title}",
+    })
 
     docx_bytes = build_docx_bytes(title, payload.html)
     filename = f"{title}.docx"
@@ -504,6 +623,99 @@ async def export_docx(payload: DocExportRequest):
     )
 
 
+@app.post("/api/human-support")
+async def request_human_support(payload: HumanSupportRequest):
+    request_id = make_request_id("HS")
+    assignee = "法律援助志愿者" if payload.phase == "phase2" else "民事检察承办助理"
+    status = "待人工跟进"
+    summary_parts = [
+        payload.case_summary.strip(),
+        f"主体：{payload.evidence_subject}" if payload.evidence_subject else "",
+        f"金额：{payload.evidence_amount}" if payload.evidence_amount else "",
+    ]
+    summary = "；".join(part for part in summary_parts if part) or payload.latest_question[:160]
+
+    record_platform_event("human_support_requested", {
+        "request_id": request_id,
+        "stage": phase_label(payload.phase),
+        "user_name": payload.user_name,
+        "phone": payload.phone,
+        "question": payload.latest_question[:500],
+        "summary": summary,
+        "status": status,
+        "assignee": assignee,
+    })
+
+    return {
+        "request_id": request_id,
+        "status": status,
+        "assignee": assignee,
+        "message": f"已登记人工协助请求，编号 {request_id}。{assignee}会根据后台记录继续处理。",
+    }
+
+
+@app.post("/api/case-submit")
+async def submit_case(payload: CaseSubmitRequest):
+    request_id = make_request_id("CS")
+    record_platform_event("case_submitted", {
+        "request_id": request_id,
+        "stage": phase_label("submit"),
+        "user_name": payload.user_name,
+        "phone": payload.phone,
+        "question": payload.case_summary[:500],
+        "summary": f"主体：{payload.evidence_subject or '待补充'}；金额：{payload.evidence_amount or '待补充'}",
+        "status": "已提交预审",
+        "assignee": "民事检察部门",
+    })
+    return {
+        "request_id": request_id,
+        "status": "已提交预审",
+        "message": f"预审卷宗已登记，编号 {request_id}。",
+    }
+
+
+@app.get("/api/admin/records")
+async def admin_records(days: int = 7):
+    cutoff = datetime.now() - timedelta(days=max(1, min(days, 30)))
+    records = []
+
+    for item in read_jsonl(LOG_FILE_PATH):
+        ts = parse_timestamp(item.get("timestamp", ""))
+        if ts is None or ts < cutoff:
+            continue
+        answer = item.get("justitia_answer", "")
+        records.append({
+            "timestamp": item.get("timestamp"),
+            "stage": "第二阶段 AI研判",
+            "farmer_name": item.get("user_name", "王某某"),
+            "phone": item.get("phone", "133 3107 4710"),
+            "question": item.get("user_query", ""),
+            "summary": answer[:180],
+            "status": item.get("status", "AI 已答复"),
+            "assignee": "Justitia 护薪助手",
+        })
+
+    for item in read_jsonl(EVENT_LOG_PATH):
+        ts = parse_timestamp(item.get("timestamp", ""))
+        if ts is None or ts < cutoff:
+            continue
+        records.append({
+            "timestamp": item.get("timestamp"),
+            "stage": item.get("stage", item.get("event_type", "平台记录")),
+            "farmer_name": item.get("user_name", "王某某"),
+            "phone": item.get("phone", "133 3107 4710"),
+            "question": item.get("question", ""),
+            "summary": item.get("summary", ""),
+            "status": item.get("status", "已记录"),
+            "assignee": item.get("assignee", ""),
+            "request_id": item.get("request_id", ""),
+        })
+
+    records.sort(key=lambda row: row.get("timestamp", ""), reverse=True)
+    backend_log("ADMIN_DASHBOARD_QUERY", f"days={days} | records={len(records)}")
+    return {"days": days, "records": records[:200]}
+
+
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
@@ -512,6 +724,7 @@ async def upload_file(file: UploadFile = File(...)):
         original_filename = file.filename or "uploaded_file"
         filename = original_filename.lower()
         ocr_confidence = None
+        backend_log("PHASE2 FILE_UPLOAD", f"{original_filename} | {len(contents)} bytes")
         
         # 1. 处理 PDF/DOCX/TXT (保持原样)
         if filename.endswith('.pdf'):
@@ -528,7 +741,7 @@ async def upload_file(file: UploadFile = File(...)):
             if ocr_engine is None:
                 return {"error": f"OCR 引擎未就绪：{ocr_init_error or '请检查 rapidocr/easyocr 与模型文件是否安装完整'}"}
 
-            print(f"[OCR] 正在使用 {ocr_engine_name} 识别图片证据: {original_filename}")
+            backend_log("PHASE2 OCR_START", f"{ocr_engine_name} | {original_filename}")
             image = Image.open(io.BytesIO(contents)).convert('RGB')
             image_np = np.array(image)
             text, ocr_confidence = run_ocr(image_np)
@@ -536,12 +749,12 @@ async def upload_file(file: UploadFile = File(...)):
             if not text.strip():
                 return {"error": "OCR 未识别到有效文字，请换一张更清晰的图片，或直接输入欠条上的金额、签名和日期。"}
 
-            print("\n" + "="*30 + " 扫描结果可视化 " + "="*30)
-            print(text) # 这里会在后端控制台完整输出图片文字
-            print("="*76 + "\n")
+            print("\n" + "="*30 + " 扫描结果可视化 " + "="*30, flush=True)
+            print(text, flush=True) # 这里会在后端控制台完整输出图片文字
+            print("="*76 + "\n", flush=True)
             
             confidence_log = f"，平均置信度: {ocr_confidence}" if ocr_confidence is not None else ""
-            print(f"[OCR] 提取字数: {len(text)}{confidence_log}")
+            backend_log("PHASE2 OCR_DONE", f"{original_filename} | 提取字数: {len(text)}{confidence_log}")
             
         else:
             return {"error": "暂不支持该文件格式"}
@@ -554,9 +767,9 @@ async def upload_file(file: UploadFile = File(...)):
             "ocr_confidence": ocr_confidence,
         }
     except Exception as e:
-        print(f"[Parse Error]: {str(e)}")
+        backend_log("Parse Error", str(e))
         return {"error": f"文件解析失败: {str(e)}"}
 
 if __name__ == "__main__":
-    print(f"Justitia Shield API Server starting at http://{SERVER_HOST}:{SERVER_PORT}")
+    backend_log("SERVER_START", f"Justitia Shield API Server starting at http://{SERVER_HOST}:{SERVER_PORT}")
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)
