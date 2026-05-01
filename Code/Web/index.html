@@ -335,6 +335,11 @@
                         </ol>
                     </div>
 
+                    <div id="support-eval-card" class="mt-5 pt-4 border-t border-white/5 text-xs text-zinc-500">
+                        <h4 class="text-xs font-bold text-zinc-500 mb-3 uppercase tracking-widest">支持起诉评估</h4>
+                        <p>发送案情后自动评估诉讼能力与责任链。</p>
+                    </div>
+
                     <div class="mt-6 pt-4 border-t border-white/5 space-y-3">
                         <button type="button" onclick="requestJudgment()"
                             class="w-full text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-2 rounded-lg transition-colors border border-transparent hover:border-amber-500/50">
@@ -473,6 +478,13 @@
                         🔄 重新从变量渲染模板
                     </button>
                 </div>
+
+                <div class="bg-zinc-900/50 p-4 rounded-xl border border-white/5">
+                    <h3 class="text-xs font-bold text-amber-500 mb-3 uppercase tracking-widest">白话说明卡</h3>
+                    <div id="doc-guide-card" class="text-xs text-zinc-400 leading-relaxed space-y-2">
+                        <p>生成文书后，这里会同步解释这份材料的用途、需要核对的内容和下一步提交方式。</p>
+                    </div>
+                </div>
             </div>
 
             <div class="col-span-1 lg:col-span-3 bg-[#fdfdfd] p-10 rounded-xl shadow-2xl relative min-h-[70vh] group overflow-y-auto"
@@ -493,40 +505,38 @@
         <div class="bg-zinc-900/80 border border-amber-500/30 rounded-2xl p-10 shadow-2xl relative overflow-hidden">
             <div class="absolute -top-20 -right-20 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl"></div>
 
-            <div class="text-center mb-10 relative z-10">
+            <div class="text-center mb-8 relative z-10">
                 <div
                     class="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6 shadow-[0_0_30px_rgba(34,197,94,0.3)]">
                     ✓
                 </div>
                 <h2 class="text-2xl font-bold text-white mb-2">支持起诉申请已成功提交</h2>
-                <p class="text-zinc-400">系统已生成智能预审卷宗，并同步至西城区检察院内部办案系统</p>
+                <p id="tracking-anxiety-note" class="text-zinc-400">系统已生成智能预审卷宗，并同步登记后续跟进事项。</p>
                 <div class="mt-6 inline-block bg-zinc-950 border border-zinc-800 px-6 py-3 rounded-lg">
                     <span class="text-xs text-zinc-500 mr-2">智能预收案号：</span>
-                    <span class="text-amber-500 font-mono font-bold tracking-widest">京西检民支预〔2026〕0108号</span>
+                    <span id="tracking-case-number" class="text-amber-500 font-mono font-bold tracking-widest">登记中</span>
                 </div>
                 <p id="case-submit-meta" class="text-xs text-zinc-500 mt-3"></p>
             </div>
 
+            <div id="tracking-summary-card"
+                class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-8 relative z-10">
+                <div class="rounded-xl border border-white/5 bg-zinc-950/70 p-4">
+                    <p class="text-xs text-zinc-500 mb-1">当前状态</p>
+                    <p id="tracking-current-status" class="text-sm font-bold text-amber-400">材料登记中</p>
+                </div>
+                <div class="rounded-xl border border-white/5 bg-zinc-950/70 p-4">
+                    <p class="text-xs text-zinc-500 mb-1">预计反馈</p>
+                    <p id="tracking-expected-response" class="text-sm font-bold text-zinc-200">登记成功后生成</p>
+                </div>
+                <div class="rounded-xl border border-white/5 bg-zinc-950/70 p-4">
+                    <p class="text-xs text-zinc-500 mb-1">负责跟进</p>
+                    <p id="tracking-handler" class="text-sm font-bold text-zinc-200">民事检察部门</p>
+                </div>
+            </div>
+
             <div class="relative pl-6 border-l-2 border-zinc-800 space-y-8 mb-12 ml-4">
-                <div class="relative">
-                    <div class="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-green-500 ring-4 ring-zinc-900">
-                    </div>
-                    <h4 class="text-sm font-bold text-green-500">申请已提交</h4>
-                    <p class="text-xs text-zinc-500 mt-1">2026-04-24 10:00:00</p>
-                </div>
-                <div class="relative">
-                    <div class="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-green-500 ring-4 ring-zinc-900">
-                    </div>
-                    <h4 class="text-sm font-bold text-green-500">Justitia 护薪引擎预审通过</h4>
-                    <p class="text-xs text-zinc-500 mt-1">证据链完整度评级：A级。文书已自动装订成册。</p>
-                </div>
-                <div class="relative">
-                    <div
-                        class="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)] ring-4 ring-zinc-900 animate-pulse">
-                    </div>
-                    <h4 class="text-sm font-bold text-amber-500">待办：分配承办检察官</h4>
-                    <p class="text-xs text-amber-500/70 mt-1">民事检察部门正在接收案卷，预计 1 个工作日内与您联系。</p>
-                </div>
+                <div id="tracking-steps"></div>
             </div>
 
             <div class="flex gap-4 justify-center">
@@ -597,6 +607,14 @@
                 <div class="p-5">
                     <p class="text-xs text-zinc-500 font-bold mb-3">案件时间线</p>
                     <ol id="admin-detail-timeline" class="space-y-3 text-sm"></ol>
+                    <div class="mt-5">
+                        <p class="text-xs text-zinc-500 font-bold mb-2">支持起诉必要性</p>
+                        <div id="admin-detail-capacity" class="text-sm text-zinc-400 leading-relaxed"></div>
+                    </div>
+                    <div class="mt-5">
+                        <p class="text-xs text-zinc-500 font-bold mb-2">多主体责任链</p>
+                        <div id="admin-detail-chain" class="space-y-2 text-sm text-zinc-400"></div>
+                    </div>
                     <div class="mt-5">
                         <p class="text-xs text-zinc-500 font-bold mb-2">待补强材料</p>
                         <ul id="admin-detail-missing" class="space-y-2 text-sm text-zinc-400"></ul>
@@ -699,6 +717,7 @@
         let lastUserQuestion = "";
         let lastEvidenceSnapshot = { subject: "待补充", amount: "待补充", status: "证据不足，需补充" };
         let lastCaseProfile = null;
+        let lastTrackingRequestId = "";
         let adminRecords = [];
 
         function switchView(targetId) {
@@ -874,6 +893,7 @@
             }
             switchView('view-status');
             updateProgress(4); // 进度条走到最后一步
+            renderTrackingCard(lastCaseProfile, "");
 
             const meta = document.getElementById('case-submit-meta');
             if (meta) meta.innerText = "正在向后端登记预审提交记录...";
@@ -893,6 +913,11 @@
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.detail || data.message || `HTTP ${response.status}`);
                 if (meta) meta.innerText = data.message || `后端已登记，编号 ${data.request_id}`;
+                lastTrackingRequestId = data.request_id || "";
+                if (data.tracking_plan && lastCaseProfile) {
+                    lastCaseProfile = { ...lastCaseProfile, tracking_plan: data.tracking_plan };
+                }
+                renderTrackingCard(lastCaseProfile, lastTrackingRequestId);
             } catch (error) {
                 if (meta) meta.innerText = `后端登记失败：${error.message || '请检查服务是否运行'}`;
             }
@@ -1051,13 +1076,67 @@
             `
         };
 
+        function buildDocGuideHtml(type) {
+            const profile = lastCaseProfile || {};
+            const subject = profile.debtor_subject || lastEvidenceSnapshot.subject || '待补充';
+            const amount = profile.amount_display || lastEvidenceSnapshot.amount || '待补充';
+            const capacity = profile.litigation_capacity?.level || '待核实';
+            const missing = profile.missing_items || [];
+            const docPurpose = {
+                qisuzhuang: '交给法院，说明你向谁要工资、要多少钱、事实和证据是什么。',
+                sq_zhichiqisu: '交给检察院，说明你为什么需要检察机关支持起诉。',
+                ws_zhichiqisu: '供检察机关内部审查后形成正式支持起诉意见时参考。',
+                fayuan: '交给法律援助机构，说明你需要律师或法律服务帮助。'
+            }[type] || '用于说明欠薪事实和维权请求。';
+
+            const missingHtml = missing.length
+                ? missing.slice(0, 4).map(item => `<li>${escapeHtml(item)}</li>`).join('')
+                : `<li>目前没有明显缺口，但仍需核对原件、签名、日期和联系方式。</li>`;
+
+            return `
+                <section class="mt-10 border-t border-gray-300 pt-6 text-sm leading-loose">
+                    <h2 class="font-bold text-lg mb-3">给申请人的白话说明</h2>
+                    <p><strong>这份材料是做什么的：</strong>${escapeHtml(docPurpose)}</p>
+                    <p><strong>系统已识别的关键事实：</strong>欠薪主体为 ${escapeHtml(subject)}，金额为 ${escapeHtml(amount)}，诉讼能力初评为 ${escapeHtml(capacity)}。</p>
+                    <p><strong>签字前请重点核对：</strong>姓名、手机号、欠薪金额、务工时间、工地名称、被告/被申请人信息，以及每一份证据是否真实。</p>
+                    <p><strong>还建议补充：</strong></p>
+                    <ol class="pl-6 list-decimal">${missingHtml}</ol>
+                    <p><strong>下一步：</strong>保留欠条或截图原件，按证据目录整理材料；如果看不懂文书内容，请让法律援助人员或承办人员逐项解释后再签字。</p>
+                </section>
+            `;
+        }
+
+        function renderDocumentTemplate(type) {
+            return `${docTemplates[type] || ''}${buildDocGuideHtml(type)}`;
+        }
+
+        function updateDocGuideCard(type) {
+            const card = document.getElementById('doc-guide-card');
+            if (!card) return;
+            const profile = lastCaseProfile || {};
+            const missing = profile.missing_items || [];
+            const capacity = profile.litigation_capacity;
+            card.innerHTML = `
+                <p><strong class="text-zinc-200">用途：</strong>${escapeHtml({
+                    qisuzhuang: '法院起诉用',
+                    sq_zhichiqisu: '申请检察支持起诉用',
+                    ws_zhichiqisu: '检察机关审查参考',
+                    fayuan: '申请法律援助用'
+                }[type] || '维权材料')}</p>
+                <p><strong class="text-zinc-200">支持起诉必要性：</strong>${escapeHtml(capacity?.level || '待核实')} ${capacity ? `(${Math.round(Number(capacity.score || 0) * 100)}%)` : ''}</p>
+                <p><strong class="text-zinc-200">签字前核对：</strong>主体、金额、日期、证据名称和联系方式。</p>
+                <p><strong class="text-zinc-200">待补：</strong>${escapeHtml(missing[0] || '暂无明显缺口，建议核对原件。')}</p>
+            `;
+        }
+
         // 切换模板渲染
         function switchTemplate(type) {
             const editor = document.getElementById('editable-doc');
             if (docTemplates[type]) {
                 editor.style.opacity = 0;
                 setTimeout(() => {
-                    editor.innerHTML = docTemplates[type];
+                    editor.innerHTML = renderDocumentTemplate(type);
+                    updateDocGuideCard(type);
                     editor.style.opacity = 1;
                 }, 150);
             }
@@ -1264,6 +1343,78 @@
             `).join("");
         }
 
+        function renderCapacityHtml(profile) {
+            const capacity = profile?.litigation_capacity;
+            if (!capacity) return `<p class="text-zinc-500">暂未形成诉讼能力评估。</p>`;
+            const percent = Math.round(Number(capacity.score || 0) * 100);
+            const factors = capacity.factors || [];
+            return `
+                <div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="text-amber-400 font-bold">${escapeHtml(capacity.level || "待核实")}</span>
+                        <span class="text-xs text-zinc-500">必要性 ${percent}%</span>
+                    </div>
+                    <p class="text-xs text-zinc-400 mt-2">${escapeHtml(capacity.support_suggestion || "")}</p>
+                    <ul class="mt-2 space-y-1 text-xs text-zinc-500">
+                        ${factors.slice(0, 4).map(item => `<li>· ${escapeHtml(item)}</li>`).join("")}
+                    </ul>
+                </div>
+            `;
+        }
+
+        function renderLiabilityChainHtml(profile) {
+            const chain = profile?.liability_chain || [];
+            if (!chain.length) return `<p class="text-zinc-500">暂无责任主体链条。</p>`;
+            return chain.map(item => `
+                <div class="rounded-lg border border-white/5 bg-zinc-900/60 p-3">
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-zinc-200 font-bold">${escapeHtml(item.role || "责任主体")}</p>
+                        <span class="text-[11px] rounded-full px-2 py-0.5 ${item.risk === '高' ? 'bg-red-500/10 text-red-300' : 'bg-zinc-700 text-zinc-300'}">${escapeHtml(item.risk || "待核实")}</span>
+                    </div>
+                    <p class="text-xs text-amber-400 mt-1">${escapeHtml(item.name || "待补充")}</p>
+                    <p class="text-xs text-zinc-500 mt-2 leading-relaxed">${escapeHtml(item.basis || "")}</p>
+                    ${(item.needed || []).length ? `<p class="text-[11px] text-zinc-500 mt-2">需补：${escapeHtml(item.needed.join('、'))}</p>` : ""}
+                </div>
+            `).join("");
+        }
+
+        function renderTrackingCard(profile, requestId = "") {
+            const plan = profile?.tracking_plan || {};
+            const numberEl = document.getElementById('tracking-case-number');
+            const statusEl = document.getElementById('tracking-current-status');
+            const expectedEl = document.getElementById('tracking-expected-response');
+            const handlerEl = document.getElementById('tracking-handler');
+            const noteEl = document.getElementById('tracking-anxiety-note');
+            const stepsEl = document.getElementById('tracking-steps');
+            if (!numberEl || !stepsEl) return;
+
+            numberEl.innerText = requestId || lastTrackingRequestId || "待登记";
+            statusEl.innerText = plan.current_status || profile?.evidence_status || "材料登记中";
+            expectedEl.innerText = plan.expected_response || "登记后 1 个工作日内反馈";
+            handlerEl.innerText = plan.handler || "民事检察部门 / 法律援助联络员";
+            noteEl.innerText = plan.anxiety_note || "系统已登记线索；请保留证据原件，按补强清单等待后续反馈。";
+
+            const steps = plan.steps || [
+                { name: "线索登记", status: "done", detail: "已记录咨询内容和联系方式。" },
+                { name: "材料初审", status: "active", detail: statusEl.innerText },
+                { name: "补强证据", status: "pending", detail: "根据缺失清单补充材料。" },
+                { name: "支持起诉审查", status: "pending", detail: "形成支持起诉审查意见。" },
+            ];
+            stepsEl.innerHTML = steps.map(step => {
+                const done = step.status === "done";
+                const active = step.status === "active";
+                const dot = done ? "bg-green-500" : (active ? "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)] animate-pulse" : "bg-zinc-700");
+                const color = done ? "text-green-500" : (active ? "text-amber-500" : "text-zinc-500");
+                return `
+                    <div class="relative mb-8">
+                        <div class="absolute -left-[31px] top-1 w-4 h-4 rounded-full ${dot} ring-4 ring-zinc-900"></div>
+                        <h4 class="text-sm font-bold ${color}">${escapeHtml(step.name || "")}</h4>
+                        <p class="text-xs text-zinc-500 mt-1">${escapeHtml(step.detail || "")}</p>
+                    </div>
+                `;
+            }).join("");
+        }
+
         function openAdminDetail(id) {
             const row = adminRecords.find(item => item.id === id);
             if (!row) return;
@@ -1277,10 +1428,14 @@
                 renderFact('项目地点', profile.project_site),
                 renderFact('现有证据', (profile.evidence_items || []).join('、') || '待补充'),
                 renderFact('证据状态', profile.evidence_status || row.status || '已记录', true),
+                renderFact('追踪状态', profile.tracking_plan?.current_status || row.status || '已记录'),
+                renderFact('预计反馈', profile.tracking_plan?.expected_response || '待登记'),
             ].join("");
             document.getElementById('admin-detail-question').innerText = row.question || row.summary || "暂无";
             document.getElementById('admin-detail-answer').innerHTML = row.answer ? marked.parse(row.answer) : escapeHtml(row.summary || "暂无详细处理记录");
             document.getElementById('admin-detail-timeline').innerHTML = renderTimelineItems(profile);
+            document.getElementById('admin-detail-capacity').innerHTML = renderCapacityHtml(profile);
+            document.getElementById('admin-detail-chain').innerHTML = renderLiabilityChainHtml(profile);
             const missing = profile.missing_items || [];
             document.getElementById('admin-detail-missing').innerHTML = missing.length
                 ? missing.map(item => `<li class="flex gap-2"><span class="text-amber-500">•</span><span>${escapeHtml(item)}</span></li>`).join("")
@@ -1691,6 +1846,29 @@
             if (/跑了|失联|联系不上|拖欠|不给|没给|差我/.test(text)) timeline.push({ date: '当前', title: '发生欠薪争议', detail: '案情中提到欠薪、失联或拒付工资。' });
 
             const evidenceStatus = hasContract || evidenceItems.length >= 2 ? '证据较充分，可进入文书生成与预审' : (evidenceItems.length ? '已有初步证据，建议补强关键材料' : '证据不足，需补充');
+            const capacityFactors = [];
+            if (/农民工|木工|工地|务工|打工|包工/.test(text)) capacityFactors.push('农民工或建筑务工人员追索劳动报酬');
+            if (/咋办|怎么办|不会写|不懂法|请不起律师/.test(text)) capacityFactors.push('法律知识或诉讼表达能力偏弱');
+            if (/跑了|失联|联系不上|拖欠|不给/.test(text)) capacityFactors.push('对方失联或拒付导致自行维权困难');
+            const capacityScore = Math.min(0.9, 0.35 + capacityFactors.length * 0.18);
+            const liabilityChain = [
+                { role: '直接欠薪主体', name: company, basis: '用户陈述中首先需要锁定的付款义务人。', risk: company === '待补充' ? '待核实' : '高', needed: company === '待补充' ? ['公司全称或包工头姓名'] : [] },
+                { role: '劳务/分包单位', name: '待补充', basis: '建筑施工欠薪可能涉及分包或劳务单位。', risk: '待核实', needed: ['项目公示牌', '分包单位名称'] },
+                { role: '总包/建设单位', name: '待补充', basis: '复杂欠薪需核查总包、建设单位和工资专户。', risk: '待核实', needed: ['总包单位', '建设单位', '工资专户线索'] },
+            ];
+            const trackingPlan = {
+                current_status: evidenceItems.length ? '待补充关键材料' : '线索登记中',
+                expected_response: '登记后 1 个工作日内反馈',
+                next_step: evidenceItems.length ? '按缺失材料清单补齐后复核。' : '先补充主体、金额和基础证据。',
+                handler: '民事检察部门 / 法律援助联络员',
+                anxiety_note: '系统已登记线索；请保留证据原件和截图，不需要重复讲述案情。',
+                steps: [
+                    { name: '线索登记', status: 'done', detail: '已记录咨询内容和联系方式。' },
+                    { name: '材料初审', status: 'active', detail: evidenceItems.length ? '已有初步证据，等待补强材料。' : '等待补充基础证据。' },
+                    { name: '补强证据', status: 'pending', detail: '补充主体、金额、时间和证据材料。' },
+                    { name: '支持起诉审查', status: 'pending', detail: '审查是否符合支持起诉条件。' },
+                ]
+            };
             return {
                 worker_name: currentUser.name,
                 phone: currentUser.phone,
@@ -1703,6 +1881,14 @@
                 evidence_status: evidenceStatus,
                 missing_items: [],
                 timeline,
+                litigation_capacity: {
+                    score: capacityScore,
+                    level: capacityScore >= 0.7 ? '较弱' : '一般偏弱',
+                    factors: capacityFactors.length ? capacityFactors : ['待进一步询问诉讼能力、经济状况和取证困难。'],
+                    support_suggestion: capacityScore >= 0.7 ? '建议申请检察支持起诉，并同步协调法律援助。' : '可先补强材料，再评估是否申请支持起诉。'
+                },
+                liability_chain: liabilityChain,
+                tracking_plan: trackingPlan,
                 confidence: 0.5
             };
         }
@@ -1722,6 +1908,19 @@
                     <p class="text-zinc-300">${escapeHtml(item.title || "案情节点")}</p>
                 </li>
             `).join("");
+        }
+
+        function renderSupportEvaluation(profile) {
+            const card = document.getElementById('support-eval-card');
+            if (!card) return;
+            card.innerHTML = `
+                <h4 class="text-xs font-bold text-zinc-500 mb-3 uppercase tracking-widest">支持起诉评估</h4>
+                ${renderCapacityHtml(profile)}
+                <div class="mt-3">
+                    <p class="text-[11px] text-zinc-500 font-bold mb-2">责任链条</p>
+                    <div class="space-y-2">${renderLiabilityChainHtml(profile)}</div>
+                </div>
+            `;
         }
 
         function renderCaseProfile(profile) {
@@ -1757,6 +1956,10 @@
                 </li>
             `;
             renderCaseTimeline(profile);
+            renderSupportEvaluation(profile);
+            renderTrackingCard(profile, lastTrackingRequestId);
+            const selectedDoc = document.querySelector('input[name=doc_type]:checked');
+            if (selectedDoc) updateDocGuideCard(selectedDoc.value);
         }
 
         async function updateRealEvidence(caseText) {
