@@ -1,4 +1,5 @@
 import io
+import hashlib
 import json
 import os
 import re
@@ -142,7 +143,15 @@ def record_platform_event(event_type: str, payload: dict):
     backend_log(f"EVENT {event_type}", preview[:600])
 
 
-def save_chat_log(query: str, reasoning: str, answer: str, sources: list, user_name: str = "王某某", phone: str = "133 3107 4710"):
+def save_chat_log(
+    query: str,
+    reasoning: str,
+    answer: str,
+    sources: list,
+    user_name: str = "王某某",
+    phone: str = "133 3107 4710",
+    case_profile: dict | None = None,
+):
     """Save chat history and reasoning to JSONL format."""
     log_data = {
         "timestamp": now_text(),
@@ -152,6 +161,7 @@ def save_chat_log(query: str, reasoning: str, answer: str, sources: list, user_n
         "justitia_thought": reasoning,
         "justitia_answer": answer,
         "reference_sources": [s.get("filename", "Unknown File") for s in sources],
+        "case_profile": case_profile or build_case_profile(f"{query}\n{answer}", user_name=user_name, phone=phone),
         "status": "AI 已答复",
     }
     
@@ -248,6 +258,12 @@ class CaseSubmitRequest(BaseModel):
     case_summary: str = ""
     evidence_subject: str = ""
     evidence_amount: str = ""
+
+
+class CaseExtractRequest(BaseModel):
+    text: str
+    user_name: str = "王某某"
+    phone: str = "133 3107 4710"
 
 
 def safe_filename(title: str) -> str:
@@ -402,6 +418,273 @@ def phase_label(phase: str) -> str:
     }
     return labels.get(phase, phase or "平台记录")
 
+
+CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+CN_UNITS = {"十": 10, "百": 100, "千": 1000}
+
+
+def parse_chinese_amount_number(text: str) -> int:
+    normalized = re.sub(r"[元块人民币整\s]", "", str(text or "").replace("〇", "零"))
+    if not normalized:
+        return 0
+
+    short_wan = re.fullmatch(r"([一二两三四五六七八九十百千]+)万([一二两三四五六七八九])", normalized)
+    if short_wan:
+        return parse_chinese_amount_number(short_wan.group(1)) * 10000 + CN_DIGITS[short_wan.group(2)] * 1000
+
+    short_thousand = re.fullmatch(r"([一二两三四五六七八九])千([一二两三四五六七八九])", normalized)
+    if short_thousand:
+        return CN_DIGITS[short_thousand.group(1)] * 1000 + CN_DIGITS[short_thousand.group(2)] * 100
+
+    short_hundred = re.fullmatch(r"([一二两三四五六七八九])百([一二两三四五六七八九])", normalized)
+    if short_hundred:
+        return CN_DIGITS[short_hundred.group(1)] * 100 + CN_DIGITS[short_hundred.group(2)] * 10
+
+    total = 0
+    section_text = normalized
+    if "万" in normalized:
+        wan_part, section_text = normalized.split("万", 1)
+        total += parse_chinese_amount_number(wan_part) * 10000
+
+    section = 0
+    current_number = 0
+    for ch in section_text:
+        if ch in CN_DIGITS:
+            current_number = CN_DIGITS[ch]
+        elif ch in CN_UNITS:
+            section += (current_number or 1) * CN_UNITS[ch]
+            current_number = 0
+    return total + section + current_number
+
+
+def format_amount(amount: int | None) -> str:
+    return f"¥ {amount:,}" if amount else "待补充"
+
+
+def extract_amount_yuan(text: str) -> int | None:
+    text = text or ""
+    chinese_money = re.search(r"([一二两三四五六七八九十百千万零〇]{2,12})\s*(?:元|块|人民币|整)?", text)
+    if chinese_money and re.search(r"[万千百十]", chinese_money.group(1)):
+        amount = parse_chinese_amount_number(chinese_money.group(1))
+        if amount >= 1000:
+            return amount
+
+    digit_wan = re.search(r"(\d+(?:\.\d+)?)\s*万(?:\s*(\d{1,4}))?", text)
+    if digit_wan:
+        return int(float(digit_wan.group(1)) * 10000 + int(digit_wan.group(2) or 0))
+
+    digit_yuan = re.search(r"(\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{1,2})?\s*[元块]", text)
+    if digit_yuan:
+        return int(digit_yuan.group(1).replace(",", ""))
+    return None
+
+
+def normalize_subject_candidate(candidate: str) -> str:
+    value = str(candidate or "")
+    value = re.sub(r"[“”\"『』《》]", "", value)
+    value = re.sub(r"^(?:您说的|所谓的|这个|那个|该|欠薪主体|用工主体|用人单位|被申请人|被告|雇主|老板)\s*(?:是|为)?\s*", "", value)
+    value = re.sub(r"(?:全称|完整名称|身份信息|统一社会信用代码|联系方式|电话|地址|盖章|签字|签名|是什么|是否|需要|请|吗|呢|？|\?).*$", "", value)
+    value = re.split(r"[，。；、,\n\r]", value)[0].strip()
+
+    org_match = re.search(r"[\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组)", value)
+    if org_match:
+        value = org_match.group(0)
+
+    value = re.sub(r"^(?:在|到|给|跟|为)", "", value)
+    value = re.sub(r"(?:那个|这个)?(?:工地|项目|现场)(?:干活|干木工|务工|上班|做工)?.*$", "", value)
+    value = re.sub(r"(?:干活|干木工|务工|上班|做工).*$", "", value)
+    return value.strip()
+
+
+def is_useful_subject(candidate: str) -> bool:
+    if not candidate or len(candidate) < 2 or len(candidate) > 40:
+        return False
+    if re.fullmatch(r"(?:公司|单位|雇主|老板|被告|被申请人|项目|工地|包工头|劳动者|申请人)", candidate):
+        return False
+    if re.search(r"(?:某|XX|xxx|未知|待补充|不清楚|全称|姓名|身份|信息|电话|地址|证据|欠条|工资|金额|劳动合同|工牌)", candidate, re.I):
+        return False
+    return bool(re.search(r"(?:公司|项目部|工程部|分包商|劳务队|班组)$|^[\u4e00-\u9fa5A-Za-z0-9·]{2,8}(?:老板|包工头)$", candidate))
+
+
+def extract_debtor_subject(text: str) -> str:
+    patterns = [
+        r"(?:在|到|给|跟|为|受雇于|入职|就职于)\s*[“\"]?([\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组))[”\"]?(?=那个|这个|的|工地|项目|干|做|上班|务工|施工|$)",
+        r"(?:欠薪主体|用工主体|用人单位|被申请人|被告|雇主|劳务公司)\s*[:：]\s*[“\"]?([^，。；\n\r]{2,50})",
+        r"[“\"]([\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组))[”\"]",
+        r"([\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组))",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, text or ""):
+            candidate = normalize_subject_candidate(match.group(1))
+            if is_useful_subject(candidate):
+                return candidate
+
+    person_match = re.search(r"(?:老板|包工头|班组长)\s*([一-龥]{2,4})", text or "")
+    if person_match:
+        return f"{person_match.group(1)}老板"
+    return "待补充"
+
+
+def extract_project_site(text: str) -> str:
+    patterns = [
+        r"(?:在|到)\s*([^，。；\n\r]{2,40}?(?:工地|项目|工程|现场))",
+        r"(?:项目名称|工程名称|施工地点|工地位置)\s*[:：]\s*([^，。；\n\r]{2,60})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text or "")
+        if match:
+            value = re.sub(r"(?:干活|干木工|务工|上班|做工).*$", "", match.group(1)).strip()
+            if 2 <= len(value) <= 60:
+                return value
+    return "待补充"
+
+
+def resolve_relative_year(prefix: str | None) -> int:
+    current_year = datetime.now().year
+    if prefix == "去年":
+        return current_year - 1
+    if prefix == "明年":
+        return current_year + 1
+    return current_year
+
+
+def extract_timeline(text: str) -> list[dict]:
+    timeline = []
+    for match in re.finditer(r"(去年|今年|明年)?\s*(\d{1,2})\s*月(?:份)?", text or ""):
+        month = int(match.group(2))
+        if not 1 <= month <= 12:
+            continue
+        year = resolve_relative_year(match.group(1))
+        nearby = text[max(0, match.start() - 16):match.end() + 18]
+        if re.search(r"(?:入场|开始|上班|务工|进场|施工)", nearby):
+            title = "开始务工"
+        elif re.search(r"(?:完工|离场|结束|干到|停工)", nearby):
+            title = "工程完工或停止务工"
+        elif re.search(r"(?:干|做)", nearby):
+            title = "务工时间节点"
+        else:
+            title = "案情时间节点"
+        timeline.append({"date": f"{year}年{month}月", "title": title, "detail": nearby.strip()})
+
+    if re.search(r"(?:欠条|结算单|工资单)", text or ""):
+        timeline.append({"date": "当前", "title": "已持有书面证据", "detail": "案情中提到欠条、结算单或工资单等书面材料。"})
+    if re.search(r"(?:跑了|失联|联系不上|拖欠|不给|没给|差我)", text or ""):
+        timeline.append({"date": "当前", "title": "发生欠薪争议", "detail": "案情中提到欠薪、失联或拒付工资。"})
+
+    deduped = []
+    seen = set()
+    for item in timeline:
+        key = (item["date"], item["title"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+    return deduped[:6]
+
+
+EVIDENCE_KEYWORDS = {
+    "欠条": ["欠条", "借条"],
+    "工资结算材料": ["结算单", "工资单", "工资表", "工资条", "工程量确认单"],
+    "聊天记录": ["微信", "聊天记录", "短信", "施工群", "群聊"],
+    "转账记录": ["转账", "银行流水", "收款", "付款记录"],
+    "劳动或用工证明": ["劳动合同", "协议", "工牌", "考勤", "打卡", "工地照片", "工作服"],
+    "证人证言": ["工友", "证人", "班组", "证明"],
+    "录音录像": ["录音", "录像", "视频"],
+}
+
+
+def extract_evidence_items(text: str) -> list[str]:
+    items = []
+    for label, keywords in EVIDENCE_KEYWORDS.items():
+        if any(keyword in (text or "") for keyword in keywords):
+            items.append(label)
+    return items
+
+
+def build_missing_items(profile: dict) -> list[str]:
+    missing = []
+    if profile["debtor_subject"] == "待补充":
+        missing.append("欠薪主体身份信息：公司全称、统一社会信用代码，或包工头姓名、电话、身份证线索。")
+    if not profile["amount_yuan"]:
+        missing.append("欠薪金额依据：欠条、工资结算单、聊天确认、转账记录或手写明细。")
+    if profile["work_period"] == "待补充":
+        missing.append("务工时间段：入场时间、完工/离场时间，以及期间实际出勤情况。")
+    if profile["project_site"] == "待补充":
+        missing.append("项目地点信息：工地名称、项目地址、总包或分包单位线索。")
+    if not profile["evidence_items"]:
+        missing.append("基础证据材料：欠条、聊天记录、工友证明、工地照片、考勤或工牌。")
+    elif "欠条" not in profile["evidence_items"] and "工资结算材料" not in profile["evidence_items"]:
+        missing.append("书面结算证据：优先补欠条、结算单，或让对方在聊天中确认欠款金额。")
+    return missing
+
+
+def build_next_actions(profile: dict) -> list[str]:
+    actions = []
+    if profile["debtor_subject"] == "待补充":
+        actions.append("先补齐欠薪主体，至少明确公司全称或包工头姓名和联系方式。")
+    if not profile["amount_yuan"]:
+        actions.append("把欠薪金额写清楚，最好用欠条、结算单或聊天记录固定。")
+    if profile["evidence_items"]:
+        actions.append("保留证据原件和截图原图，按时间顺序整理成证据目录。")
+    actions.append("准备身份证明、联系电话、工地地点和工友联系方式，便于投诉、起诉或申请支持起诉。")
+    return actions[:4]
+
+
+def build_case_profile(text: str, user_name: str = "王某某", phone: str = "133 3107 4710") -> dict:
+    text = text or ""
+    amount = extract_amount_yuan(text)
+    timeline = extract_timeline(text)
+    dated_nodes = [item for item in timeline if re.match(r"\d{4}年\d{1,2}月", item["date"])]
+    work_period = "待补充"
+    if len(dated_nodes) >= 2:
+        work_period = f"{dated_nodes[0]['date']} 至 {dated_nodes[1]['date']}"
+    elif dated_nodes:
+        work_period = dated_nodes[0]["date"]
+
+    evidence_items = extract_evidence_items(text)
+    profile = {
+        "worker_name": user_name or "待补充",
+        "phone": phone or "",
+        "debtor_subject": extract_debtor_subject(text),
+        "amount_yuan": amount,
+        "amount_display": format_amount(amount),
+        "work_period": work_period,
+        "project_site": extract_project_site(text),
+        "evidence_items": evidence_items,
+        "timeline": timeline,
+    }
+
+    score = 0
+    score += 2 if profile["debtor_subject"] != "待补充" else 0
+    score += 2 if profile["amount_yuan"] else 0
+    score += 1 if profile["work_period"] != "待补充" else 0
+    score += 1 if profile["project_site"] != "待补充" else 0
+    score += min(2, len(evidence_items))
+
+    if score >= 7:
+        evidence_status = "证据较充分，可进入文书生成与预审"
+    elif score >= 4:
+        evidence_status = "已有初步证据，建议补强关键材料"
+    else:
+        evidence_status = "证据不足，需补充"
+
+    profile["missing_items"] = build_missing_items(profile)
+    profile["next_actions"] = build_next_actions(profile)
+    profile["risk_flags"] = [item for item in [
+        "欠薪主体不明确" if profile["debtor_subject"] == "待补充" else "",
+        "金额缺少稳定依据" if not profile["amount_yuan"] else "",
+        "务工时间不完整" if profile["work_period"] == "待补充" else "",
+        "书面证据不足" if not evidence_items else "",
+    ] if item]
+    profile["evidence_status"] = evidence_status
+    profile["confidence"] = round(min(score, 8) / 8, 2)
+    return profile
+
+
+def record_id(*parts: str) -> str:
+    raw = "|".join(str(part or "") for part in parts)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
 def engine_error_message(error: Exception) -> str:
     raw = str(error)
     if "401" in raw or "Authentication Fails" in raw or "invalid" in raw.lower() and "api key" in raw.lower():
@@ -411,25 +694,27 @@ def engine_error_message(error: Exception) -> str:
 def build_local_fallback_answer(query: str, sources: list) -> str:
     source_names = [item.get("filename", "本地案例库") for item in sources[:2]]
     source_text = "、".join(source_names) if source_names else "本地劳动报酬纠纷知识库"
+    profile = build_case_profile(query)
+    missing_text = "\n".join(f"- {item}" for item in profile["missing_items"][:4]) or "- 目前关键要素较完整，建议继续保留原始证据。"
+    evidence_text = "、".join(profile["evidence_items"]) or "暂未识别到明确证据材料"
+    next_action_text = "\n".join(f"{idx}. {item}" for idx, item in enumerate(profile["next_actions"], start=1))
     return f"""我先给您一个可立即执行的维权方案。
 
 **初步识别**
 
-您描述的是一起追索劳动报酬纠纷：在西单德拉曼公司相关工地从去年 10 月干到今年 1 月，尚欠工资约 25,000 元，目前有一张欠条。欠条是很关键的书面证据，但还需要尽量补强“谁欠钱、欠多少、在哪里干、干了多久”这几项。
+您描述的是一起追索劳动报酬纠纷。我先按现有信息抽取如下：欠薪主体为“{profile['debtor_subject']}”，欠薪金额为“{profile['amount_display']}”，务工时间为“{profile['work_period']}”，项目地点为“{profile['project_site']}”，已识别证据为“{evidence_text}”。
+
+**证据链状态**
+
+{profile['evidence_status']}。当前最需要补强的是：
+
+{missing_text}
 
 **下一步建议**
 
-1. 先把欠条拍清楚，保留原件，不要交给对方。
-2. 继续补充证据：微信聊天记录、转账记录、工友证明、工地照片、考勤记录、工牌、施工群记录、包工头电话和公司名称。
-3. 如果欠条上写明公司或包工头姓名、金额、日期，可以先向劳动监察部门投诉，也可以准备起诉材料。
-4. 如果您是农民工、取证困难、自己起诉能力弱，可以向检察机关申请支持起诉，请求帮助固定证据、梳理被告主体和诉讼请求。
+{next_action_text}
 
-**需要您再确认 4 个信息**
-
-- 欠条上写的是“德拉曼公司”还是某个老板/包工头个人？
-- 欠条金额是否明确写了 25,000 元？
-- 欠条有没有签名、身份证号、电话或盖章？
-- 工地项目全称和具体位置是否能说清？
+如果您是农民工、取证困难、自己起诉能力弱，可以向检察机关申请支持起诉，请求帮助固定证据、梳理被告主体和诉讼请求。
 
 我已参考 {source_text} 做初步研判。远程智能模型当前不可用时，上面是本地应急指引；等密钥恢复后，系统会继续生成更完整的支持起诉分析和文书要点。"""
 
@@ -437,6 +722,17 @@ def build_local_fallback_answer(query: str, sources: list) -> str:
 @app.get("/")
 async def serve_frontend():
     return FileResponse(CODE_DIR / "Web" / "index.html")
+
+
+@app.post("/api/case-extract")
+async def extract_case(payload: CaseExtractRequest):
+    profile = build_case_profile(payload.text, payload.user_name, payload.phone)
+    backend_log(
+        "CASE_EXTRACT",
+        f"{payload.user_name}({payload.phone}) | subject={profile['debtor_subject']} | amount={profile['amount_display']} | status={profile['evidence_status']}"
+    )
+    return {"case": profile}
+
 
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -479,6 +775,9 @@ async def chat_endpoint(request: ChatRequest):
                     "content_preview": doc.page_content[:30] + "..."
                 })
 
+    case_profile = build_case_profile(request.query, request.user_name, request.phone)
+    case_profile_text = json.dumps(case_profile, ensure_ascii=False, indent=2)
+
 # === 增强版 System Prompt：深度结合 RAG 与 2026 法律背景 ===
     final_system_prompt = f"""您是“护薪”检察支持起诉智能平台的智能助理 Justitia（也可以自称“小朱”），由 Huang Zitong 开发，专门服务于北京市西城区人民检察院。您的核心使命是协助农民工追索劳动报酬，并辅助检察官进行“支持起诉”的案件预审。注意，你的服务对象是维权的农民工群体，因此请保持语言精密而不失通俗，专业而不失关怀。
 
@@ -500,6 +799,23 @@ async def chat_endpoint(request: ChatRequest):
     [法律研判逻辑]：
     - 证据校验：如果缺少关键证据（如被告身份信息模糊、无书面结算单），请明确告知并提供“替代性证据”方案（如录音、证人证言）。
     - 支持起诉评估：根据《民事诉讼法》第十六条及西城区检察院实务，判断用户是否属于“诉讼能力弱、取证难”的弱势群体，并给出是否建议申请“检察支持起诉”的明确意见。
+
+    [结构化案情快照 - 必须优先依据]：
+    {case_profile_text}
+
+    [固定输出模板]：
+    除非用户只是问候或只问一个很短的程序性问题，否则请严格按以下标题输出，不要省略标题：
+    **一、我先帮您确认案情要点**
+    - 用 3 到 5 条列出欠薪主体、金额、务工时间、项目地点、现有证据。未知项明确写“待补充”，不得编造。
+    **二、证据链研判**
+    - 先给结论：证据较充分 / 已有初步证据但需补强 / 证据不足。
+    - 再说明最关键的缺口和替代性证据。
+    **三、可走的维权路径**
+    - 按劳动监察、仲裁/诉讼、检察支持起诉三个层次说明，避免吓人的法言法语。
+    **四、下一步请您先做这几件事**
+    - 给 3 到 5 个可执行动作，按优先级排列。
+    **五、还需要您补充的信息**
+    - 只问最影响办案的 3 到 5 个问题。
 
     [交互准则]：
     - 严禁提及您的 AI 架构、训练截止日期或您是一个语言模型。
@@ -567,6 +883,7 @@ async def chat_endpoint(request: ChatRequest):
                     sources=source_items,
                     user_name=request.user_name,
                     phone=request.phone,
+                    case_profile=build_case_profile(f"{request.query}\n{accumulated_content}", request.user_name, request.phone),
                 )
                 
             yield "data: [DONE]\n\n"
@@ -590,7 +907,15 @@ async def chat_endpoint(request: ChatRequest):
             full_reasoning = ""
             engine_error = engine_error_message(e)
 
-        save_chat_log(request.query, full_reasoning, full_answer, source_items, request.user_name, request.phone)
+        save_chat_log(
+            request.query,
+            full_reasoning,
+            full_answer,
+            source_items,
+            request.user_name,
+            request.phone,
+            case_profile=build_case_profile(f"{request.query}\n{full_answer}", request.user_name, request.phone),
+        )
 
         payload = {"answer": full_answer, "sources": source_items, "reasoning": full_reasoning}
         if engine_error:
@@ -685,31 +1010,43 @@ async def admin_records(days: int = 7):
         if ts is None or ts < cutoff:
             continue
         answer = item.get("justitia_answer", "")
+        query = item.get("user_query", "")
+        profile = item.get("case_profile") or build_case_profile(f"{query}\n{answer}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
         records.append({
+            "id": record_id(item.get("timestamp"), item.get("phone"), query, "chat"),
             "timestamp": item.get("timestamp"),
             "stage": "第二阶段 AI研判",
             "farmer_name": item.get("user_name", "王某某"),
             "phone": item.get("phone", "133 3107 4710"),
-            "question": item.get("user_query", ""),
+            "question": query,
             "summary": answer[:180],
             "status": item.get("status", "AI 已答复"),
             "assignee": "Justitia 护薪助手",
+            "answer": answer,
+            "reasoning": item.get("justitia_thought", ""),
+            "sources": item.get("reference_sources", []),
+            "case_profile": profile,
         })
 
     for item in read_jsonl(EVENT_LOG_PATH):
         ts = parse_timestamp(item.get("timestamp", ""))
         if ts is None or ts < cutoff:
             continue
+        question = item.get("question", "")
+        summary = item.get("summary", "")
         records.append({
+            "id": record_id(item.get("timestamp"), item.get("phone"), item.get("request_id"), item.get("event_type")),
             "timestamp": item.get("timestamp"),
             "stage": item.get("stage", item.get("event_type", "平台记录")),
             "farmer_name": item.get("user_name", "王某某"),
             "phone": item.get("phone", "133 3107 4710"),
-            "question": item.get("question", ""),
-            "summary": item.get("summary", ""),
+            "question": question,
+            "summary": summary,
             "status": item.get("status", "已记录"),
             "assignee": item.get("assignee", ""),
             "request_id": item.get("request_id", ""),
+            "event_type": item.get("event_type", ""),
+            "case_profile": build_case_profile(f"{question}\n{summary}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710")),
         })
 
     records.sort(key=lambda row: row.get("timestamp", ""), reverse=True)

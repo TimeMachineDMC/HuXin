@@ -328,6 +328,13 @@
                                 class="w-2 h-2 rounded-full bg-zinc-700"></span> 具体欠薪金额</li>
                     </ul>
 
+                    <div class="mt-5 pt-4 border-t border-white/5">
+                        <h4 class="text-xs font-bold text-zinc-500 mb-3 uppercase tracking-widest">案件时间线</h4>
+                        <ol id="case-timeline-list" class="space-y-3 text-xs text-zinc-500">
+                            <li>发送案情后自动生成。</li>
+                        </ol>
+                    </div>
+
                     <div class="mt-6 pt-4 border-t border-white/5 space-y-3">
                         <button type="button" onclick="requestJudgment()"
                             class="w-full text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-2 rounded-lg transition-colors border border-transparent hover:border-amber-500/50">
@@ -565,6 +572,39 @@
             </div>
         </div>
 
+        <section id="admin-case-detail"
+            class="hidden mb-6 border border-amber-500/20 bg-zinc-950/70 rounded-xl overflow-hidden">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-5 py-4 border-b border-white/5">
+                <div>
+                    <p class="text-xs text-amber-500 font-bold tracking-widest uppercase">案件详情</p>
+                    <h3 id="admin-detail-title" class="text-lg font-bold text-white mt-1">--</h3>
+                </div>
+                <button type="button" onclick="closeAdminDetail()"
+                    class="self-start md:self-auto text-xs text-zinc-500 hover:text-zinc-200 transition-colors">关闭</button>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-0">
+                <div class="p-5 border-b lg:border-b-0 lg:border-r border-white/5">
+                    <div id="admin-detail-facts" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm"></div>
+                    <div class="mt-5">
+                        <p class="text-xs text-zinc-500 font-bold mb-2">原始问题 / 摘要</p>
+                        <p id="admin-detail-question" class="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap"></p>
+                    </div>
+                    <div class="mt-5">
+                        <p class="text-xs text-zinc-500 font-bold mb-2">AI 答复 / 处理记录</p>
+                        <div id="admin-detail-answer" class="text-sm text-zinc-400 leading-relaxed max-h-48 overflow-y-auto pr-2"></div>
+                    </div>
+                </div>
+                <div class="p-5">
+                    <p class="text-xs text-zinc-500 font-bold mb-3">案件时间线</p>
+                    <ol id="admin-detail-timeline" class="space-y-3 text-sm"></ol>
+                    <div class="mt-5">
+                        <p class="text-xs text-zinc-500 font-bold mb-2">待补强材料</p>
+                        <ul id="admin-detail-missing" class="space-y-2 text-sm text-zinc-400"></ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <div class="bg-zinc-900/70 border border-white/5 rounded-xl overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="min-w-full text-left text-sm">
@@ -658,6 +698,8 @@
         let currentUser = accounts.worker;
         let lastUserQuestion = "";
         let lastEvidenceSnapshot = { subject: "待补充", amount: "待补充", status: "证据不足，需补充" };
+        let lastCaseProfile = null;
+        let adminRecords = [];
 
         function switchView(targetId) {
             // 隐藏所有视图
@@ -1104,6 +1146,9 @@
             if (lastUserQuestion) parts.push(`最近问题：${lastUserQuestion}`);
             if (lastEvidenceSnapshot.subject !== "待补充") parts.push(`欠薪主体：${lastEvidenceSnapshot.subject}`);
             if (lastEvidenceSnapshot.amount !== "待补充") parts.push(`欠薪金额：${lastEvidenceSnapshot.amount}`);
+            if (lastCaseProfile?.work_period && lastCaseProfile.work_period !== "待补充") parts.push(`务工时间：${lastCaseProfile.work_period}`);
+            if (lastCaseProfile?.project_site && lastCaseProfile.project_site !== "待补充") parts.push(`项目地点：${lastCaseProfile.project_site}`);
+            if (lastCaseProfile?.evidence_items?.length) parts.push(`证据材料：${lastCaseProfile.evidence_items.join('、')}`);
             parts.push(`证据链：${lastEvidenceSnapshot.status}`);
             return parts.join("；");
         }
@@ -1171,8 +1216,9 @@
                     return;
                 }
 
+                adminRecords = records;
                 tbody.innerHTML = records.map(row => `
-                    <tr class="hover:bg-zinc-800/40">
+                    <tr class="hover:bg-zinc-800/40 cursor-pointer" onclick="openAdminDetail('${escapeHtml(row.id || "")}')">
                         <td class="px-4 py-3 whitespace-nowrap text-xs text-zinc-500">${escapeHtml(row.timestamp || "")}</td>
                         <td class="px-4 py-3 whitespace-nowrap">${escapeHtml(row.stage || "")}</td>
                         <td class="px-4 py-3 whitespace-nowrap">
@@ -1192,6 +1238,58 @@
             } catch (error) {
                 tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-red-300">读取失败：${escapeHtml(error.message || '请确认后端服务正在运行。')}</td></tr>`;
             }
+        }
+
+        function renderFact(label, value, emphasis = false) {
+            return `
+                <div class="border border-white/5 bg-zinc-900/60 rounded-lg p-3">
+                    <p class="text-[11px] text-zinc-500 mb-1">${escapeHtml(label)}</p>
+                    <p class="text-sm ${emphasis ? 'text-amber-400 font-bold' : 'text-zinc-200'}">${escapeHtml(value || "待补充")}</p>
+                </div>
+            `;
+        }
+
+        function renderTimelineItems(profile) {
+            const timeline = profile?.timeline || [];
+            if (!timeline.length) {
+                return `<li class="text-zinc-500">暂无明确时间节点。</li>`;
+            }
+            return timeline.map(item => `
+                <li class="relative pl-4 border-l border-amber-500/30">
+                    <span class="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-amber-500"></span>
+                    <p class="text-amber-400 text-xs font-bold">${escapeHtml(item.date || "时间待补充")}</p>
+                    <p class="text-zinc-200 font-bold">${escapeHtml(item.title || "案情节点")}</p>
+                    <p class="text-xs text-zinc-500 leading-relaxed mt-1">${escapeHtml(item.detail || "")}</p>
+                </li>
+            `).join("");
+        }
+
+        function openAdminDetail(id) {
+            const row = adminRecords.find(item => item.id === id);
+            if (!row) return;
+            const profile = row.case_profile || {};
+            document.getElementById('admin-case-detail').classList.remove('hidden');
+            document.getElementById('admin-detail-title').innerText = `${row.farmer_name || "农民工"} · ${row.stage || "平台记录"} · ${row.status || "已记录"}`;
+            document.getElementById('admin-detail-facts').innerHTML = [
+                renderFact('欠薪主体', profile.debtor_subject, profile.debtor_subject !== "待补充"),
+                renderFact('欠薪金额', profile.amount_display, profile.amount_display !== "待补充"),
+                renderFact('务工时间', profile.work_period),
+                renderFact('项目地点', profile.project_site),
+                renderFact('现有证据', (profile.evidence_items || []).join('、') || '待补充'),
+                renderFact('证据状态', profile.evidence_status || row.status || '已记录', true),
+            ].join("");
+            document.getElementById('admin-detail-question').innerText = row.question || row.summary || "暂无";
+            document.getElementById('admin-detail-answer').innerHTML = row.answer ? marked.parse(row.answer) : escapeHtml(row.summary || "暂无详细处理记录");
+            document.getElementById('admin-detail-timeline').innerHTML = renderTimelineItems(profile);
+            const missing = profile.missing_items || [];
+            document.getElementById('admin-detail-missing').innerHTML = missing.length
+                ? missing.map(item => `<li class="flex gap-2"><span class="text-amber-500">•</span><span>${escapeHtml(item)}</span></li>`).join("")
+                : `<li class="text-zinc-500">暂无明显缺口。</li>`;
+            document.getElementById('admin-case-detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function closeAdminDetail() {
+            document.getElementById('admin-case-detail').classList.add('hidden');
         }
 
 
@@ -1414,7 +1512,7 @@
                 chatHistory.push({ "role": "assistant", "content": fullContent });
 
                 // --- 核心修改 2: 调用真实的证据提取逻辑 ---
-                updateRealEvidence(`${finalPrompt}\n${fullContent}`);
+                await updateRealEvidence(`${finalPrompt}\n${fullContent}`);
                 maxUnlockedStep = Math.max(maxUnlockedStep, 3);
                 updateProgress(2, { unlock: false });
 
@@ -1562,17 +1660,82 @@
             return candidates[0] || "待补充";
         }
 
-        function updateRealEvidence(aiResponse) {
-            const list = document.getElementById('evidence-list');
+        function buildClientCaseProfile(text) {
+            const amount = extractAmount(text);
+            const company = extractDebtor(text);
+            const hasContract = /合同|劳动合同|协议/.test(text);
+            const evidenceItems = [];
+            if (/欠条|借条/.test(text)) evidenceItems.push('欠条');
+            if (/结算单|工资单|工资表|工资条/.test(text)) evidenceItems.push('工资结算材料');
+            if (/微信|聊天记录|短信|施工群/.test(text)) evidenceItems.push('聊天记录');
+            if (/转账|银行流水|付款|收款/.test(text)) evidenceItems.push('转账记录');
+            if (/录音|录像|视频/.test(text)) evidenceItems.push('录音录像');
+            if (/考勤|工牌|工地照片|劳动合同|协议/.test(text)) evidenceItems.push('劳动或用工证明');
+            if (/工友|证人|证明/.test(text)) evidenceItems.push('证人证言');
 
-            const amount = extractAmount(aiResponse);
-            const company = extractDebtor(aiResponse);
-            const hasContract = /合同|劳动合同|协议/.test(aiResponse);
-            const hasEvidence = /欠条|结算单|工资单|微信|聊天记录|转账|录音|考勤|工牌|证人/.test(aiResponse);
-            const evidenceStatus = hasContract ? '证据较充分' : (hasEvidence ? '已有初步证据，建议补强' : '证据不足，需补充');
-            const evidenceDot = hasContract || hasEvidence ? 'bg-amber-500 shadow-[0_0_8px_#f59e0b]' : 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]';
+            const timeline = [];
+            for (const match of text.matchAll(/(去年|今年|明年)?\s*(\d{1,2})\s*月(?:份)?/g)) {
+                const prefix = match[1];
+                const year = prefix === '去年' ? new Date().getFullYear() - 1 : (prefix === '明年' ? new Date().getFullYear() + 1 : new Date().getFullYear());
+                const month = Number(match[2]);
+                const nearby = text.slice(Math.max(0, match.index - 14), match.index + match[0].length + 16);
+                if (month >= 1 && month <= 12) {
+                    timeline.push({
+                        date: `${year}年${month}月`,
+                        title: /完工|离场|结束|干到/.test(nearby) ? '工程完工或停止务工' : '务工时间节点',
+                        detail: nearby
+                    });
+                }
+            }
+            if (/欠条|结算单|工资单/.test(text)) timeline.push({ date: '当前', title: '已持有书面证据', detail: '案情中提到欠条、结算单或工资单等书面材料。' });
+            if (/跑了|失联|联系不上|拖欠|不给|没给|差我/.test(text)) timeline.push({ date: '当前', title: '发生欠薪争议', detail: '案情中提到欠薪、失联或拒付工资。' });
+
+            const evidenceStatus = hasContract || evidenceItems.length >= 2 ? '证据较充分，可进入文书生成与预审' : (evidenceItems.length ? '已有初步证据，建议补强关键材料' : '证据不足，需补充');
+            return {
+                worker_name: currentUser.name,
+                phone: currentUser.phone,
+                debtor_subject: company,
+                amount_yuan: amount === '待补充' ? null : Number(String(amount).replace(/[^\d]/g, '')),
+                amount_display: amount,
+                work_period: timeline.filter(item => /^\d{4}年/.test(item.date)).slice(0, 2).map(item => item.date).join(' 至 ') || '待补充',
+                project_site: '待补充',
+                evidence_items: evidenceItems,
+                evidence_status: evidenceStatus,
+                missing_items: [],
+                timeline,
+                confidence: 0.5
+            };
+        }
+
+        function renderCaseTimeline(profile) {
+            const list = document.getElementById('case-timeline-list');
+            if (!list) return;
+            const timeline = profile?.timeline || [];
+            if (!timeline.length) {
+                list.innerHTML = `<li class="text-zinc-500">暂无明确时间节点。</li>`;
+                return;
+            }
+            list.innerHTML = timeline.slice(0, 4).map(item => `
+                <li class="relative pl-4 border-l border-amber-500/30">
+                    <span class="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-amber-500"></span>
+                    <p class="text-amber-400 font-bold">${escapeHtml(item.date || "时间待补充")}</p>
+                    <p class="text-zinc-300">${escapeHtml(item.title || "案情节点")}</p>
+                </li>
+            `).join("");
+        }
+
+        function renderCaseProfile(profile) {
+            const list = document.getElementById('evidence-list');
+            if (!list || !profile) return;
+
+            const amount = profile.amount_display || "待补充";
+            const company = profile.debtor_subject || "待补充";
+            const evidenceStatus = profile.evidence_status || "证据不足，需补充";
+            const evidenceItems = profile.evidence_items || [];
+            const evidenceDot = evidenceItems.length ? 'bg-amber-500 shadow-[0_0_8px_#f59e0b]' : 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]';
             const companyDot = company === "待补充" ? 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]';
             const amountDot = amount === "待补充" ? 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]';
+            lastCaseProfile = profile;
             lastEvidenceSnapshot = { subject: company, amount, status: evidenceStatus };
 
             list.innerHTML = `
@@ -1588,7 +1751,34 @@
                     <span class="w-2 h-2 rounded-full ${evidenceDot}"></span> 
                     证据链：${evidenceStatus}
                 </li>
+                <li class="flex items-center gap-2 text-zinc-500 animate-in fade-in duration-1000">
+                    <span class="w-2 h-2 rounded-full ${evidenceDot}"></span>
+                    证据材料：${escapeHtml(evidenceItems.join('、') || '待补充')}
+                </li>
             `;
+            renderCaseTimeline(profile);
+        }
+
+        async function updateRealEvidence(caseText) {
+            const fallbackProfile = buildClientCaseProfile(caseText);
+            renderCaseProfile(fallbackProfile);
+
+            try {
+                const response = await apiFetch('/api/case-extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: caseText,
+                        user_name: currentUser.name,
+                        phone: currentUser.phone
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+                if (data.case) renderCaseProfile(data.case);
+            } catch (error) {
+                console.warn("结构化案情抽取暂用前端兜底:", error);
+            }
         }
 
         // 初始化
