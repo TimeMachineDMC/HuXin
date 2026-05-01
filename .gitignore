@@ -20,3 +20,4 @@ Log/*.jsonl
 
 # Source documents can be private or bulky; keep the generated vector DB tracked separately.
 Data/
+Doc/

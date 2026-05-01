@@ -179,7 +179,7 @@ except Exception as e:
     print(f"Database loading failed: {e}")
     raise
 
-print("Initializing DeepSeek-V3.2 model...")
+print("Initializing DeepSeek-V4 model...")
 client = AsyncOpenAI(
     api_key=DEEPSEEK_API_KEY,
     base_url="https://api.deepseek.com"
@@ -629,97 +629,6 @@ def build_next_actions(profile: dict) -> list[str]:
     return actions[:4]
 
 
-def build_litigation_capacity(text: str, profile: dict) -> dict:
-    factors = []
-    score = 0
-    if re.search(r"(?:农民工|木工|瓦工|钢筋工|小工|工地|务工|打工|班组|包工)", text or ""):
-        score += 2
-        factors.append("农民工或建筑务工人员追索劳动报酬")
-    if re.search(r"(?:不会写|不懂法|没文化|文化低|不知道咋办|咋办|怎么办|不会起诉)", text or ""):
-        score += 2
-        factors.append("法律知识和诉讼表达能力偏弱")
-    if re.search(r"(?:没钱|经济困难|付不起|请不起律师|路费|生活困难)", text or ""):
-        score += 2
-        factors.append("可能存在经济困难或难以委托律师")
-    if re.search(r"(?:跑了|失联|联系不上|躲着|找不到|不给|拖着)", text or ""):
-        score += 1
-        factors.append("对方失联或拒付导致自行维权困难")
-    if re.search(r"(?:害怕|威胁|报复|不敢|怕)", text or ""):
-        score += 1
-        factors.append("存在心理压力或不敢独立维权")
-    if profile.get("debtor_subject") == "待补充" or profile.get("project_site") == "待补充":
-        score += 1
-        factors.append("欠薪主体或项目线索不完整，取证难度较高")
-    if profile.get("evidence_items") and len(profile["evidence_items"]) <= 1:
-        score += 1
-        factors.append("证据材料较单一，需要专业协助补强")
-
-    normalized = round(min(score, 8) / 8, 2)
-    if normalized >= 0.7:
-        level = "较弱"
-        suggestion = "建议申请检察支持起诉，并同步协调法律援助。"
-    elif normalized >= 0.4:
-        level = "一般偏弱"
-        suggestion = "可先补强材料，再由检察机关或法律援助人员评估是否支持起诉。"
-    else:
-        level = "待核实"
-        suggestion = "暂未充分体现诉讼能力偏弱，建议继续询问经济状况、取证能力和是否能独立起诉。"
-
-    return {
-        "score": normalized,
-        "level": level,
-        "factors": factors or ["待进一步询问诉讼能力、经济状况和取证困难。"],
-        "support_suggestion": suggestion,
-    }
-
-
-def build_liability_chain(text: str, profile: dict) -> list[dict]:
-    chain = []
-    subject = profile.get("debtor_subject") or "待补充"
-    evidence_items = profile.get("evidence_items") or []
-
-    chain.append({
-        "role": "直接欠薪主体",
-        "name": subject,
-        "basis": "用户陈述、欠条或工资结算材料中首先需要锁定的付款义务人。",
-        "risk": "高" if subject != "待补充" else "待核实",
-        "needed": [] if subject != "待补充" else ["公司全称或包工头姓名", "电话、身份证号或统一社会信用代码"],
-    })
-
-    if re.search(r"(?:包工头|老板|班组长|李老板|王老板|张老板)", text or ""):
-        contractor_name = subject if re.search(r"(?:老板|包工头|班组长)$", subject) else "待核实具体姓名"
-        chain.append({
-            "role": "包工头/班组长",
-            "name": contractor_name,
-            "basis": "案情出现包工头、老板或班组长线索，可能是实际招用和结算人员。",
-            "risk": "高",
-            "needed": ["姓名、电话、微信号", "欠条签名或聊天确认", "工友证言"],
-        })
-
-    if re.search(r"(?:分包|转包|劳务公司|挂靠|项目部|总包|建设单位|开发商|工程款)", text or "") or profile.get("project_site") != "待补充":
-        chain.extend([
-            {
-                "role": "劳务/分包单位",
-                "name": "待补充",
-                "basis": "建筑施工欠薪常涉及劳务分包或违法分包，需要核对施工合同和实名制信息。",
-                "risk": "中",
-                "needed": ["劳务分包单位名称", "施工合同或项目公示牌", "工资专户或实名制记录"],
-            },
-            {
-                "role": "总包/建设单位",
-                "name": "待补充",
-                "basis": "若存在违法分包、转包、挂靠或工程款拖欠，可进一步核查总包和建设单位责任。",
-                "risk": "待核实",
-                "needed": ["项目总包单位", "建设单位", "工程款支付及工资专户线索"],
-            },
-        ])
-
-    if not evidence_items:
-        chain[0]["needed"].append("欠条、结算单、聊天记录或工友证明")
-
-    return chain[:4]
-
-
 def build_tracking_plan(profile: dict) -> dict:
     if profile.get("evidence_status", "").startswith("证据较充分"):
         current = "材料初审中"
@@ -797,8 +706,6 @@ def build_case_profile(text: str, user_name: str = "王某某", phone: str = "13
     ] if item]
     profile["evidence_status"] = evidence_status
     profile["confidence"] = round(min(score, 8) / 8, 2)
-    profile["litigation_capacity"] = build_litigation_capacity(text, profile)
-    profile["liability_chain"] = build_liability_chain(text, profile)
     profile["tracking_plan"] = build_tracking_plan(profile)
     return profile
 
@@ -821,24 +728,11 @@ def build_local_fallback_answer(query: str, sources: list) -> str:
     missing_text = "\n".join(f"- {item}" for item in profile["missing_items"][:4]) or "- 目前关键要素较完整，建议继续保留原始证据。"
     evidence_text = "、".join(profile["evidence_items"]) or "暂未识别到明确证据材料"
     next_action_text = "\n".join(f"{idx}. {item}" for idx, item in enumerate(profile["next_actions"], start=1))
-    capacity = profile["litigation_capacity"]
-    chain_text = "\n".join(
-        f"- {item['role']}：{item['name']}（{item['risk']}）"
-        for item in profile["liability_chain"][:3]
-    )
     return f"""我先给您一个可立即执行的维权方案。
 
 **初步识别**
 
 您描述的是一起追索劳动报酬纠纷。我先按现有信息抽取如下：欠薪主体为“{profile['debtor_subject']}”，欠薪金额为“{profile['amount_display']}”，务工时间为“{profile['work_period']}”，项目地点为“{profile['project_site']}”，已识别证据为“{evidence_text}”。
-
-**支持起诉必要性**
-
-诉讼能力初评为“{capacity['level']}”（评分 {capacity['score']}）。{capacity['support_suggestion']}
-
-**责任链条**
-
-{chain_text}
 
 **证据链状态**
 
@@ -948,8 +842,6 @@ async def chat_endpoint(request: ChatRequest):
     - 再说明最关键的缺口和替代性证据。
     **三、可走的维权路径**
     - 按劳动监察、仲裁/诉讼、检察支持起诉三个层次说明，避免吓人的法言法语。
-    - 必须结合 litigation_capacity 字段说明“诉讼能力偏弱/取证困难/经济困难/不敢或不能独立起诉”等支持起诉必要性；如果字段不足，明确写“还需核实”。
-    - 如 liability_chain 存在多个主体，必须用“直接欠薪主体、包工头/班组长、劳务/分包单位、总包/建设单位”的顺序说明责任核查路径。
     **四、下一步请您先做这几件事**
     - 给 3 到 5 个可执行动作，按优先级排列。
     **五、还需要您补充的信息**

@@ -335,11 +335,6 @@
                         </ol>
                     </div>
 
-                    <div id="support-eval-card" class="mt-5 pt-4 border-t border-white/5 text-xs text-zinc-500">
-                        <h4 class="text-xs font-bold text-zinc-500 mb-3 uppercase tracking-widest">支持起诉评估</h4>
-                        <p>发送案情后自动评估诉讼能力与责任链。</p>
-                    </div>
-
                     <div class="mt-6 pt-4 border-t border-white/5 space-y-3">
                         <button type="button" onclick="requestJudgment()"
                             class="w-full text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-2 rounded-lg transition-colors border border-transparent hover:border-amber-500/50">
@@ -607,14 +602,6 @@
                 <div class="p-5">
                     <p class="text-xs text-zinc-500 font-bold mb-3">案件时间线</p>
                     <ol id="admin-detail-timeline" class="space-y-3 text-sm"></ol>
-                    <div class="mt-5">
-                        <p class="text-xs text-zinc-500 font-bold mb-2">支持起诉必要性</p>
-                        <div id="admin-detail-capacity" class="text-sm text-zinc-400 leading-relaxed"></div>
-                    </div>
-                    <div class="mt-5">
-                        <p class="text-xs text-zinc-500 font-bold mb-2">多主体责任链</p>
-                        <div id="admin-detail-chain" class="space-y-2 text-sm text-zinc-400"></div>
-                    </div>
                     <div class="mt-5">
                         <p class="text-xs text-zinc-500 font-bold mb-2">待补强材料</p>
                         <ul id="admin-detail-missing" class="space-y-2 text-sm text-zinc-400"></ul>
@@ -1080,7 +1067,6 @@
             const profile = lastCaseProfile || {};
             const subject = profile.debtor_subject || lastEvidenceSnapshot.subject || '待补充';
             const amount = profile.amount_display || lastEvidenceSnapshot.amount || '待补充';
-            const capacity = profile.litigation_capacity?.level || '待核实';
             const missing = profile.missing_items || [];
             const docPurpose = {
                 qisuzhuang: '交给法院，说明你向谁要工资、要多少钱、事实和证据是什么。',
@@ -1097,7 +1083,7 @@
                 <section class="mt-10 border-t border-gray-300 pt-6 text-sm leading-loose">
                     <h2 class="font-bold text-lg mb-3">给申请人的白话说明</h2>
                     <p><strong>这份材料是做什么的：</strong>${escapeHtml(docPurpose)}</p>
-                    <p><strong>系统已识别的关键事实：</strong>欠薪主体为 ${escapeHtml(subject)}，金额为 ${escapeHtml(amount)}，诉讼能力初评为 ${escapeHtml(capacity)}。</p>
+                    <p><strong>系统已识别的关键事实：</strong>欠薪主体为 ${escapeHtml(subject)}，金额为 ${escapeHtml(amount)}。</p>
                     <p><strong>签字前请重点核对：</strong>姓名、手机号、欠薪金额、务工时间、工地名称、被告/被申请人信息，以及每一份证据是否真实。</p>
                     <p><strong>还建议补充：</strong></p>
                     <ol class="pl-6 list-decimal">${missingHtml}</ol>
@@ -1115,7 +1101,6 @@
             if (!card) return;
             const profile = lastCaseProfile || {};
             const missing = profile.missing_items || [];
-            const capacity = profile.litigation_capacity;
             card.innerHTML = `
                 <p><strong class="text-zinc-200">用途：</strong>${escapeHtml({
                     qisuzhuang: '法院起诉用',
@@ -1123,7 +1108,6 @@
                     ws_zhichiqisu: '检察机关审查参考',
                     fayuan: '申请法律援助用'
                 }[type] || '维权材料')}</p>
-                <p><strong class="text-zinc-200">支持起诉必要性：</strong>${escapeHtml(capacity?.level || '待核实')} ${capacity ? `(${Math.round(Number(capacity.score || 0) * 100)}%)` : ''}</p>
                 <p><strong class="text-zinc-200">签字前核对：</strong>主体、金额、日期、证据名称和联系方式。</p>
                 <p><strong class="text-zinc-200">待补：</strong>${escapeHtml(missing[0] || '暂无明显缺口，建议核对原件。')}</p>
             `;
@@ -1343,41 +1327,6 @@
             `).join("");
         }
 
-        function renderCapacityHtml(profile) {
-            const capacity = profile?.litigation_capacity;
-            if (!capacity) return `<p class="text-zinc-500">暂未形成诉讼能力评估。</p>`;
-            const percent = Math.round(Number(capacity.score || 0) * 100);
-            const factors = capacity.factors || [];
-            return `
-                <div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-                    <div class="flex items-center justify-between gap-3">
-                        <span class="text-amber-400 font-bold">${escapeHtml(capacity.level || "待核实")}</span>
-                        <span class="text-xs text-zinc-500">必要性 ${percent}%</span>
-                    </div>
-                    <p class="text-xs text-zinc-400 mt-2">${escapeHtml(capacity.support_suggestion || "")}</p>
-                    <ul class="mt-2 space-y-1 text-xs text-zinc-500">
-                        ${factors.slice(0, 4).map(item => `<li>· ${escapeHtml(item)}</li>`).join("")}
-                    </ul>
-                </div>
-            `;
-        }
-
-        function renderLiabilityChainHtml(profile) {
-            const chain = profile?.liability_chain || [];
-            if (!chain.length) return `<p class="text-zinc-500">暂无责任主体链条。</p>`;
-            return chain.map(item => `
-                <div class="rounded-lg border border-white/5 bg-zinc-900/60 p-3">
-                    <div class="flex items-center justify-between gap-3">
-                        <p class="text-zinc-200 font-bold">${escapeHtml(item.role || "责任主体")}</p>
-                        <span class="text-[11px] rounded-full px-2 py-0.5 ${item.risk === '高' ? 'bg-red-500/10 text-red-300' : 'bg-zinc-700 text-zinc-300'}">${escapeHtml(item.risk || "待核实")}</span>
-                    </div>
-                    <p class="text-xs text-amber-400 mt-1">${escapeHtml(item.name || "待补充")}</p>
-                    <p class="text-xs text-zinc-500 mt-2 leading-relaxed">${escapeHtml(item.basis || "")}</p>
-                    ${(item.needed || []).length ? `<p class="text-[11px] text-zinc-500 mt-2">需补：${escapeHtml(item.needed.join('、'))}</p>` : ""}
-                </div>
-            `).join("");
-        }
-
         function renderTrackingCard(profile, requestId = "") {
             const plan = profile?.tracking_plan || {};
             const numberEl = document.getElementById('tracking-case-number');
@@ -1434,8 +1383,6 @@
             document.getElementById('admin-detail-question').innerText = row.question || row.summary || "暂无";
             document.getElementById('admin-detail-answer').innerHTML = row.answer ? marked.parse(row.answer) : escapeHtml(row.summary || "暂无详细处理记录");
             document.getElementById('admin-detail-timeline').innerHTML = renderTimelineItems(profile);
-            document.getElementById('admin-detail-capacity').innerHTML = renderCapacityHtml(profile);
-            document.getElementById('admin-detail-chain').innerHTML = renderLiabilityChainHtml(profile);
             const missing = profile.missing_items || [];
             document.getElementById('admin-detail-missing').innerHTML = missing.length
                 ? missing.map(item => `<li class="flex gap-2"><span class="text-amber-500">•</span><span>${escapeHtml(item)}</span></li>`).join("")
@@ -1846,16 +1793,6 @@
             if (/跑了|失联|联系不上|拖欠|不给|没给|差我/.test(text)) timeline.push({ date: '当前', title: '发生欠薪争议', detail: '案情中提到欠薪、失联或拒付工资。' });
 
             const evidenceStatus = hasContract || evidenceItems.length >= 2 ? '证据较充分，可进入文书生成与预审' : (evidenceItems.length ? '已有初步证据，建议补强关键材料' : '证据不足，需补充');
-            const capacityFactors = [];
-            if (/农民工|木工|工地|务工|打工|包工/.test(text)) capacityFactors.push('农民工或建筑务工人员追索劳动报酬');
-            if (/咋办|怎么办|不会写|不懂法|请不起律师/.test(text)) capacityFactors.push('法律知识或诉讼表达能力偏弱');
-            if (/跑了|失联|联系不上|拖欠|不给/.test(text)) capacityFactors.push('对方失联或拒付导致自行维权困难');
-            const capacityScore = Math.min(0.9, 0.35 + capacityFactors.length * 0.18);
-            const liabilityChain = [
-                { role: '直接欠薪主体', name: company, basis: '用户陈述中首先需要锁定的付款义务人。', risk: company === '待补充' ? '待核实' : '高', needed: company === '待补充' ? ['公司全称或包工头姓名'] : [] },
-                { role: '劳务/分包单位', name: '待补充', basis: '建筑施工欠薪可能涉及分包或劳务单位。', risk: '待核实', needed: ['项目公示牌', '分包单位名称'] },
-                { role: '总包/建设单位', name: '待补充', basis: '复杂欠薪需核查总包、建设单位和工资专户。', risk: '待核实', needed: ['总包单位', '建设单位', '工资专户线索'] },
-            ];
             const trackingPlan = {
                 current_status: evidenceItems.length ? '待补充关键材料' : '线索登记中',
                 expected_response: '登记后 1 个工作日内反馈',
@@ -1881,13 +1818,6 @@
                 evidence_status: evidenceStatus,
                 missing_items: [],
                 timeline,
-                litigation_capacity: {
-                    score: capacityScore,
-                    level: capacityScore >= 0.7 ? '较弱' : '一般偏弱',
-                    factors: capacityFactors.length ? capacityFactors : ['待进一步询问诉讼能力、经济状况和取证困难。'],
-                    support_suggestion: capacityScore >= 0.7 ? '建议申请检察支持起诉，并同步协调法律援助。' : '可先补强材料，再评估是否申请支持起诉。'
-                },
-                liability_chain: liabilityChain,
                 tracking_plan: trackingPlan,
                 confidence: 0.5
             };
@@ -1908,19 +1838,6 @@
                     <p class="text-zinc-300">${escapeHtml(item.title || "案情节点")}</p>
                 </li>
             `).join("");
-        }
-
-        function renderSupportEvaluation(profile) {
-            const card = document.getElementById('support-eval-card');
-            if (!card) return;
-            card.innerHTML = `
-                <h4 class="text-xs font-bold text-zinc-500 mb-3 uppercase tracking-widest">支持起诉评估</h4>
-                ${renderCapacityHtml(profile)}
-                <div class="mt-3">
-                    <p class="text-[11px] text-zinc-500 font-bold mb-2">责任链条</p>
-                    <div class="space-y-2">${renderLiabilityChainHtml(profile)}</div>
-                </div>
-            `;
         }
 
         function renderCaseProfile(profile) {
@@ -1956,7 +1873,6 @@
                 </li>
             `;
             renderCaseTimeline(profile);
-            renderSupportEvaluation(profile);
             renderTrackingCard(profile, lastTrackingRequestId);
             const selectedDoc = document.querySelector('input[name=doc_type]:checked');
             if (selectedDoc) updateDocGuideCard(selectedDoc.value);
