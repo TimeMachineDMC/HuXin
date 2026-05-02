@@ -1,6 +1,7 @@
-# HuXin 护薪法律平台
+# HuXin “护薪”检查支持起诉智能平台
 
-HuXin 是一个面向农民工欠薪维权场景的法律智能平台。当前项目包含 FastAPI 后端、单页前端、DeepSeek 对话接口、Chroma 本地法律知识库检索、文件解析、RapidOCR 图片证据提取与 DOCX 文书导出能力。
+HuXin 是一个面向农民工欠薪维权场景的法律智能平台。当前项目包含 FastAPI 后端、前端、对话接口、Chroma 本地法律知识库检索、文件解析、RapidOCR 图片证据提取与 DOCX 文书导出能力。
+
 
 ## 项目结构
 
@@ -13,9 +14,9 @@ Model/chroma_db/            # 当前可运行的 Chroma 向量库
 Log/                        # 本地运行时聊天日志，不提交到 Git
 ```
 
-## 本地运行
+## 快速开始
 
-HuXin 现在只保留两个后端启动脚本：Mac 用 `run_local.sh`，Windows 用 `run_local.bat`。它们只负责把本机后端启动在 `http://127.0.0.1:8000`。
+HuXin 使用后端启动脚本：Mac 用 `run_local.sh`，Windows 用 `run_local.bat`。它们只负责把本机后端启动在 `http://127.0.0.1:8000`。
 
 1. 第一次运行前准备环境变量：
 
@@ -23,9 +24,9 @@ HuXin 现在只保留两个后端启动脚本：Mac 用 `run_local.sh`，Windows
 cp .env.example Code/.env
 ```
 
-把 `Code/.env` 里的 `DEEPSEEK_API_KEY` 改成你的真实密钥。现有本机 `Code/.env` 已被 `.gitignore` 保护，不会上传。
+把 `Code/.env` 里的 `DEEPSEEK_API_KEY` 改成你的真实密钥。
 
-2. Mac 启动后端：
+1. Mac 启动后端：
 
 ```bash
 ./run_local.sh
@@ -61,45 +62,6 @@ https://timemachinedmc.github.io/HuXin/?api=http://127.0.0.1:8000
 
 启动脚本会把 `Model/chroma_db` 复制到 `.runtime/chroma_db` 后再加载，避免 Chroma 运行时写入污染 Git 里保存的知识库快照。需要刷新运行库时，删除 `.runtime/chroma_db` 后重新启动即可。
 
-## GitHub Pages 与 cpolar
-
-GitHub Pages 只是静态前端，不能直接运行 Python 后端。iPhone、Win11 或任何不在后端本机上的设备打开 Pages 时，必须通过公网 HTTPS 后端访问，也就是 cpolar 这一类隧道。
-
-当前前端默认公网后端写在 `index.html` 和 `Code/Web/index.html` 顶部脚本区：
-
-```js
-const PAGE_API_BASE_URL = "https://7de19a52.r39.cpolar.top";
-```
-
-以后 cpolar 重新分配域名时，只需要把上面这一行改成新的 `https://...cpolar.top`，提交并推送到 GitHub。也可以不改文件，临时用 URL 参数覆盖：
-
-```text
-https://timemachinedmc.github.io/HuXin/?api=https://新的地址.cpolar.top
-```
-
-cpolar 隧道必须指向运行后端的同一台电脑上的 `http://localhost:8000` 或 `http://127.0.0.1:8000`。如果公网地址打开后提示 `Tunnel unavailable`，通常表示 cpolar 客户端没有运行、隧道不在这台电脑上，或没有映射到 8000 端口；这时本机 `http://127.0.0.1:8000/api/health` 可能仍然是正常的。
-
-为了方便调试，Pages 会先尝试 cpolar；如果你是在后端本机打开 Pages 且 cpolar 暂不可用，前端会自动回退到 `http://127.0.0.1:8000`。其他设备没有这个本机后端，所以仍然需要 cpolar 正常在线。
-
-## 登录账号
-
-农民工端：
-
-```text
-133 3107 4710
-```
-
-管理员看板：
-
-```text
-188 1193 9453
-```
-
-验证码保持为：
-
-```text
-8888
-```
 
 ## 重建法律知识库
 
@@ -110,7 +72,8 @@ source .venv/bin/activate
 python Code/Scripts/embedding_bge.py
 ```
 
-如需第一次下载 `BAAI/bge-m3`，将 `.env` 中 `HF_OFFLINE=0`。
+如需第一次下载 `BAAI/bge-m3`，置 `.env` 中 `HF_OFFLINE=0`。
+
 
 ## 更新日志
 
@@ -119,3 +82,7 @@ python Code/Scripts/embedding_bge.py
 04/28/2026 主 OCR 换成 RapidOCR(PP-OCRv4)，新增真实文件导出接口 /api/export-docx
 04/30/2026 增加“管理员看板”，调整证据链状态逻辑链
 05/01/2026 管理员看板新增“案件详情”面板，点击记录可看案情详细；聊天页证据链改为优先使用后端结构化结果，并新增案件时间线
+
+
+## 开源协议
+本项目采用 [MIT License](LICENSE) 许可协议。
