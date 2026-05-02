@@ -24,9 +24,12 @@ HuXin 使用后端启动脚本：Mac 用 `run_local.sh`，Windows 用 `run_local
 cp .env.example Code/.env
 ```
 
-把 `Code/.env` 里的 `DEEPSEEK_API_KEY` 改成你的真实密钥。
+将 `Code/.env` 里的 `DEEPSEEK_API_KEY` 改成真实密钥。
 
-1. Mac 启动后端：
+
+2. 启动程序：
+
+Mac 启动后端：
 
 ```bash
 ./run_local.sh
@@ -78,10 +81,15 @@ python Code/Scripts/embedding_bge.py
 ## 更新日志
 
 04/24/2026 初版完成上线
+
 04/27/2026 接入DeepSeek-V4
+
 04/28/2026 主 OCR 换成 RapidOCR(PP-OCRv4)，新增真实文件导出接口 /api/export-docx
+
 04/30/2026 增加“管理员看板”，调整证据链状态逻辑链
+
 05/01/2026 管理员看板新增“案件详情”面板，点击记录可看案情详细；聊天页证据链改为优先使用后端结构化结果，并新增案件时间线
+
 
 
 ## 开源协议
