@@ -409,6 +409,13 @@ def make_request_id(prefix: str = "HX") -> str:
     return f"{prefix}{datetime.now().strftime('%Y%m%d%H%M%S%f')[:17]}"
 
 
+def stable_int(seed: str, min_value: int, max_value: int) -> int:
+    if max_value <= min_value:
+        return min_value
+    digest = hashlib.sha1(str(seed or "").encode("utf-8")).hexdigest()
+    return min_value + int(digest[:8], 16) % (max_value - min_value + 1)
+
+
 def phase_label(phase: str) -> str:
     labels = {
         "phase2": "第二阶段人工援助",
@@ -658,6 +665,224 @@ def build_tracking_plan(profile: dict) -> dict:
     }
 
 
+SOURCE_LABELS = {
+    "self_report": "农民工自主填报",
+    "hotline_12345": "12345政务服务热线",
+    "street_center": "街道综治中心",
+    "procuratorate": "检察业务数据",
+}
+
+
+STREET_HINTS = [
+    ("西单", "西城区", "西长安街街道"),
+    ("金融街", "西城区", "金融街街道"),
+    ("德胜", "西城区", "德胜街道"),
+    ("什刹海", "西城区", "什刹海街道"),
+    ("展览路", "西城区", "展览路街道"),
+    ("月坛", "西城区", "月坛街道"),
+    ("广安门", "西城区", "广安门内街道"),
+    ("牛街", "西城区", "牛街街道"),
+    ("天桥", "西城区", "天桥街道"),
+    ("大栅栏", "西城区", "大栅栏街道"),
+]
+
+
+def infer_jurisdiction(profile: dict, text: str = "") -> dict:
+    corpus = f"{profile.get('project_site', '')} {profile.get('debtor_subject', '')} {text or ''}"
+    for keyword, district, street in STREET_HINTS:
+        if keyword in corpus:
+            return {"district": district, "street": street}
+    if "西城" in corpus:
+        return {"district": "西城区", "street": "属地街道待核"}
+    return {"district": "西城区", "street": "属地街道待核"}
+
+
+def clue_id(source: str, profile: dict, suffix: str = "") -> str:
+    raw = "|".join([
+        source,
+        profile.get("worker_name", ""),
+        profile.get("phone", ""),
+        profile.get("project_site", ""),
+        profile.get("debtor_subject", ""),
+        suffix,
+    ])
+    return f"CL{hashlib.sha1(raw.encode('utf-8')).hexdigest()[:10].upper()}"
+
+
+def build_clue(
+    source: str,
+    profile: dict,
+    jurisdiction: dict,
+    related_count: int,
+    status: str,
+    summary: str,
+    risk_tags: list[str],
+    days_ago: int = 0,
+) -> dict:
+    created_at = (datetime.now() - timedelta(days=max(0, days_ago))).strftime("%Y-%m-%d")
+    return {
+        "clue_id": clue_id(source, profile, status),
+        "source": source,
+        "source_label": SOURCE_LABELS[source],
+        "created_at": created_at,
+        "worker_name": profile.get("worker_name", "待补充") if source == "self_report" else "同工地劳动者",
+        "phone": profile.get("phone", "") if source == "self_report" else "",
+        "project_site": profile.get("project_site", "待补充"),
+        "debtor_subject": profile.get("debtor_subject", "待补充"),
+        "amount_yuan": profile.get("amount_yuan"),
+        "amount_display": profile.get("amount_display", "待补充"),
+        "issue_type": "追索劳动报酬 / 欠薪",
+        "district": jurisdiction["district"],
+        "street": jurisdiction["street"],
+        "status": status,
+        "related_count": related_count,
+        "risk_tags": risk_tags,
+        "summary": summary,
+    }
+
+
+def build_source_clues(profile: dict, text: str = "") -> list[dict]:
+    jurisdiction = infer_jurisdiction(profile, text)
+    site = profile.get("project_site") or "待补充"
+    subject = profile.get("debtor_subject") or "待补充"
+    seed = f"{site}|{subject}|{profile.get('amount_yuan')}|{profile.get('phone')}"
+    has_site_or_subject = site != "待补充" or subject != "待补充"
+    hotline_count = stable_int(seed + "|12345", 3, 7) if has_site_or_subject else 1
+    street_count = max(1, hotline_count // 2) if has_site_or_subject else 0
+    procuratorate_count = 1 if hotline_count >= 4 or profile.get("amount_yuan") else 0
+
+    clues = [
+        build_clue(
+            "self_report",
+            profile,
+            jurisdiction,
+            1,
+            "平台已登记",
+            "劳动者已自主填报案情、联系方式和现有证据，纳入标准化线索池。",
+            ["自主填报", "欠薪线索"],
+        )
+    ]
+
+    if has_site_or_subject:
+        hotline_summary = (
+            f"近七天同工地劳动和社会保障类诉求 {hotline_count} 起，关键词集中在欠薪、结算争议和施工班组失联。"
+        )
+        if re.search(r"12345|热线|投诉|反映", text or ""):
+            hotline_summary = f"已识别劳动者曾通过政务热线或投诉渠道反映诉求；{hotline_summary}"
+        clues.append(build_clue(
+            "hotline_12345",
+            profile,
+            jurisdiction,
+            hotline_count,
+            "已派单至属地",
+            hotline_summary,
+            ["12345诉求", "同工地多发"],
+            days_ago=stable_int(seed + "|h-days", 1, 6),
+        ))
+
+    if street_count:
+        clues.append(build_clue(
+            "street_center",
+            profile,
+            jurisdiction,
+            street_count,
+            "综治中心登记核验",
+            f"{jurisdiction['street']}已形成同类劳资纠纷登记 {street_count} 起，建议同步核查项目用工台账和班组人员名单。",
+            ["属地核验", "劳资纠纷"],
+            days_ago=stable_int(seed + "|s-days", 0, 4),
+        ))
+
+    if procuratorate_count:
+        clues.append(build_clue(
+            "procuratorate",
+            profile,
+            jurisdiction,
+            procuratorate_count,
+            "待类案研判",
+            "检察业务侧可将该线索并入农民工薪酬领域监督线索，评估是否需要支持起诉或制发治理建议。",
+            ["检察监督", "支持起诉预审"],
+            days_ago=0,
+        ))
+
+    return clues
+
+
+def build_risk_alert(profile: dict, clues: list[dict]) -> dict:
+    source_counts = {}
+    for clue in clues:
+        source_counts[clue["source"]] = source_counts.get(clue["source"], 0) + int(clue.get("related_count") or 0)
+
+    total_count = sum(source_counts.values())
+    unique_sources = len([count for count in source_counts.values() if count > 0])
+    risk_score = total_count + unique_sources
+    if profile.get("debtor_subject") == "待补充":
+        risk_score += 1
+    if re.search(r"跑了|失联|联系不上|逃匿", " ".join(item.get("summary", "") for item in clues)):
+        risk_score += 1
+
+    if risk_score >= 11:
+        level = "高风险"
+        color = "red"
+        action = "建议纳入欠薪风险预警清单，启动12345、属地街道、人社劳动监察与民事检察联合核验。"
+    elif risk_score >= 7:
+        level = "中风险"
+        color = "amber"
+        action = "建议持续跟踪同工地诉求，核查用工主体、分包链条和工资支付台账。"
+    else:
+        level = "关注"
+        color = "zinc"
+        action = "建议保留线索并随新增投诉自动更新风险等级。"
+
+    tags = sorted({tag for clue in clues for tag in clue.get("risk_tags", [])})
+    if total_count >= 5 and "同工地多发" not in tags:
+        tags.append("同工地多发")
+
+    return {
+        "level": level,
+        "color": color,
+        "risk_score": risk_score,
+        "related_clue_count": total_count,
+        "project_site": profile.get("project_site", "待补充"),
+        "debtor_subject": profile.get("debtor_subject", "待补充"),
+        "source_counts": source_counts,
+        "source_labels": SOURCE_LABELS,
+        "risk_tags": tags,
+        "warning_text": f"{profile.get('project_site') or profile.get('debtor_subject') or '该项目'}已融合 {total_count} 起相关欠薪线索，风险等级：{level}。",
+        "recommended_action": action,
+        "governance_goal": "从个案办理延伸到同工地、同主体类案治理，支撑“办理一案、治理一片”。",
+    }
+
+
+def build_data_timeline(clues: list[dict]) -> list[dict]:
+    timeline = []
+    for clue in clues:
+        if clue["source"] == "self_report":
+            continue
+        timeline.append({
+            "date": clue["created_at"],
+            "title": clue["source_label"],
+            "detail": f"{clue['status']}：{clue['summary']}",
+            "source": clue["source"],
+            "related_count": clue["related_count"],
+        })
+    return timeline[:4]
+
+
+def build_data_fusion_summary(clues: list[dict], risk_alert: dict) -> dict:
+    source_counts = risk_alert.get("source_counts", {})
+    active_sources = [SOURCE_LABELS[source] for source, count in source_counts.items() if count > 0 and source in SOURCE_LABELS]
+    return {
+        "pool_name": "农民工薪酬线索数据池",
+        "data_mode": "standardized_demo_fusion",
+        "source_count": len(active_sources),
+        "total_clues": risk_alert.get("related_clue_count", 0),
+        "active_sources": active_sources,
+        "source_counts": source_counts,
+        "standard_fields": ["诉求来源", "劳动者", "欠薪主体", "项目工地", "欠薪金额", "办理状态", "风险标签"],
+        "summary": f"已按统一字段融合 {len(active_sources)} 类来源、{risk_alert.get('related_clue_count', 0)} 起相关线索。",
+    }
+
+
 def build_case_profile(text: str, user_name: str = "王某某", phone: str = "133 3107 4710") -> dict:
     text = text or ""
     amount = extract_amount_yuan(text)
@@ -707,12 +932,74 @@ def build_case_profile(text: str, user_name: str = "王某某", phone: str = "13
     profile["evidence_status"] = evidence_status
     profile["confidence"] = round(min(score, 8) / 8, 2)
     profile["tracking_plan"] = build_tracking_plan(profile)
+    profile["source_clues"] = build_source_clues(profile, text)
+    profile["risk_alert"] = build_risk_alert(profile, profile["source_clues"])
+    profile["data_timeline"] = build_data_timeline(profile["source_clues"])
+    profile["data_fusion_summary"] = build_data_fusion_summary(profile["source_clues"], profile["risk_alert"])
     return profile
 
 
 def record_id(*parts: str) -> str:
     raw = "|".join(str(part or "") for part in parts)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def build_admin_risk_summary(records: list[dict]) -> list[dict]:
+    groups: dict[str, dict] = {}
+    for row in records:
+        profile = row.get("case_profile") or {}
+        alert = profile.get("risk_alert") or {}
+        key = profile.get("project_site")
+        if not key or key == "待补充":
+            key = profile.get("debtor_subject") or "待补充项目"
+
+        if key == "待补充项目":
+            continue
+
+        group = groups.setdefault(key, {
+            "project_site": profile.get("project_site", "待补充"),
+            "debtor_subject": profile.get("debtor_subject", "待补充"),
+            "level": alert.get("level", "关注"),
+            "color": alert.get("color", "zinc"),
+            "risk_score": 0,
+            "related_clue_count": 0,
+            "platform_record_count": 0,
+            "source_counts": {},
+            "source_labels": SOURCE_LABELS,
+            "risk_tags": set(),
+            "latest_timestamp": row.get("timestamp", ""),
+            "recommended_action": alert.get("recommended_action", "建议持续跟踪同类线索。"),
+            "governance_goal": alert.get("governance_goal", "推动个案办理向源头治理延伸。"),
+        })
+
+        group["platform_record_count"] += 1
+        group["latest_timestamp"] = max(group.get("latest_timestamp", ""), row.get("timestamp", ""))
+        group["risk_score"] = max(group["risk_score"], int(alert.get("risk_score") or 0))
+        for source, count in (alert.get("source_counts") or {}).items():
+            group["source_counts"][source] = max(group["source_counts"].get(source, 0), int(count or 0))
+        group["related_clue_count"] = max(group["related_clue_count"], int(alert.get("related_clue_count") or 0))
+        for tag in alert.get("risk_tags") or []:
+            group["risk_tags"].add(tag)
+
+        level_rank = {"关注": 1, "中风险": 2, "高风险": 3}
+        if level_rank.get(alert.get("level", "关注"), 1) > level_rank.get(group["level"], 1):
+            group["level"] = alert.get("level", "关注")
+            group["color"] = alert.get("color", "zinc")
+            group["recommended_action"] = alert.get("recommended_action", group["recommended_action"])
+
+    summary = []
+    for item in groups.values():
+        item["risk_tags"] = sorted(item["risk_tags"])
+        if not item["related_clue_count"]:
+            item["related_clue_count"] = sum(item["source_counts"].values())
+        item["warning_text"] = (
+            f"{item['project_site'] if item['project_site'] != '待补充' else item['debtor_subject']}"
+            f"已融合 {item['related_clue_count']} 起相关欠薪线索，风险等级：{item['level']}。"
+        )
+        summary.append(item)
+
+    summary.sort(key=lambda item: (item["risk_score"], item["related_clue_count"], item["latest_timestamp"]), reverse=True)
+    return summary[:8]
 
 
 def engine_error_message(error: Exception) -> str:
@@ -829,6 +1116,7 @@ async def chat_endpoint(request: ChatRequest):
     [法律研判逻辑]：
     - 证据校验：如果缺少关键证据（如被告身份信息模糊、无书面结算单），请明确告知并提供“替代性证据”方案（如录音、证人证言）。
     - 支持起诉评估：根据《民事诉讼法》第十六条及西城区检察院实务，判断用户是否属于“诉讼能力弱、取证难”的弱势群体，并给出是否建议申请“检察支持起诉”的明确意见。
+    - 多源线索融合：如果结构化快照中包含 12345、街道综治中心、检察业务或自主填报线索，请只做“辅助研判”式表达，说明同工地/同主体风险，不要替代正式调查结论。
 
     [结构化案情快照 - 必须优先依据]：
     {case_profile_text}
@@ -842,6 +1130,7 @@ async def chat_endpoint(request: ChatRequest):
     - 再说明最关键的缺口和替代性证据。
     **三、可走的维权路径**
     - 按劳动监察、仲裁/诉讼、检察支持起诉三个层次说明，避免吓人的法言法语。
+    - 如存在同工地多发线索，请补充一句“平台会把该线索纳入同工地风险预警，供后续联动核查参考”。
     **四、下一步请您先做这几件事**
     - 给 3 到 5 个可执行动作，按优先级排列。
     **五、还需要您补充的信息**
@@ -1050,6 +1339,8 @@ async def admin_records(days: int = 7):
         answer = item.get("justitia_answer", "")
         query = item.get("user_query", "")
         profile = item.get("case_profile") or build_case_profile(f"{query}\n{answer}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
+        if not profile.get("risk_alert"):
+            profile = build_case_profile(f"{query}\n{answer}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
         records.append({
             "id": record_id(item.get("timestamp"), item.get("phone"), query, "chat"),
             "timestamp": item.get("timestamp"),
@@ -1073,6 +1364,8 @@ async def admin_records(days: int = 7):
         question = item.get("question", "")
         summary = item.get("summary", "")
         profile = item.get("case_profile") or build_case_profile(f"{question}\n{summary}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
+        if not profile.get("risk_alert"):
+            profile = build_case_profile(f"{question}\n{summary}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
         records.append({
             "id": record_id(item.get("timestamp"), item.get("phone"), item.get("request_id"), item.get("event_type")),
             "timestamp": item.get("timestamp"),
@@ -1090,7 +1383,7 @@ async def admin_records(days: int = 7):
 
     records.sort(key=lambda row: row.get("timestamp", ""), reverse=True)
     backend_log("ADMIN_DASHBOARD_QUERY", f"days={days} | records={len(records)}")
-    return {"days": days, "records": records[:200]}
+    return {"days": days, "records": records[:200], "risk_summary": build_admin_risk_summary(records)}
 
 
 @app.post("/api/upload")
