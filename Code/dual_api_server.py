@@ -161,7 +161,7 @@ def save_chat_log(
         "justitia_thought": reasoning,
         "justitia_answer": answer,
         "reference_sources": [s.get("filename", "Unknown File") for s in sources],
-        "case_profile": case_profile or build_case_profile(f"{query}\n{answer}", user_name=user_name, phone=phone),
+        "case_profile": case_profile or build_case_profile(query, user_name=user_name, phone=phone),
         "status": "AI 已答复",
     }
     
@@ -489,17 +489,19 @@ def extract_amount_yuan(text: str) -> int | None:
 def normalize_subject_candidate(candidate: str) -> str:
     value = str(candidate or "")
     value = re.sub(r"[“”\"『』《》]", "", value)
-    value = re.sub(r"^(?:您说的|所谓的|这个|那个|该|欠薪主体|用工主体|用人单位|被申请人|被告|雇主|老板)\s*(?:是|为)?\s*", "", value)
+    value = re.sub(r"^(?:您说的|所谓的|这个|那个|该|您那个|我那个|欠薪主体|用工主体|用人单位|被申请人|被告|雇主|老板)\s*(?:是|为)?\s*", "", value)
     value = re.sub(r"(?:全称|完整名称|身份信息|统一社会信用代码|联系方式|电话|地址|盖章|签字|签名|是什么|是否|需要|请|吗|呢|？|\?).*$", "", value)
     value = re.split(r"[，。；、,\n\r]", value)[0].strip()
 
     org_match = re.search(r"[\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组)", value)
     if org_match:
         value = org_match.group(0)
+        value = re.sub(r"^(?:北京市西城区|北京西城区|西城区)", "", value)
 
     value = re.sub(r"^(?:在|到|给|跟|为)", "", value)
     value = re.sub(r"(?:那个|这个)?(?:工地|项目|现场)(?:干活|干木工|务工|上班|做工)?.*$", "", value)
     value = re.sub(r"(?:干活|干木工|务工|上班|做工).*$", "", value)
+    value = re.sub(r"(?:欠|拖欠|差|应付).*$", "", value)
     return value.strip()
 
 
@@ -508,9 +510,18 @@ def is_useful_subject(candidate: str) -> bool:
         return False
     if re.fullmatch(r"(?:公司|单位|雇主|老板|被告|被申请人|项目|工地|包工头|劳动者|申请人)", candidate):
         return False
-    if re.search(r"(?:某|XX|xxx|未知|待补充|不清楚|全称|姓名|身份|信息|电话|地址|证据|欠条|工资|金额|劳动合同|工牌)", candidate, re.I):
+    if re.search(r"(?:某|XX|xxx|未知|待补充|不清楚|全称|姓名|身份|信息|电话|地址|证据|欠条|工资|金额|劳动合同|工牌|给我|帮我|写|生成|模板|起诉状|文书|咋办|怎么|需要|建议|您|我们|平台|系统|案情|那个)", candidate, re.I):
         return False
-    return bool(re.search(r"(?:公司|项目部|工程部|分包商|劳务队|班组)$|^[\u4e00-\u9fa5A-Za-z0-9·]{2,8}(?:老板|包工头)$", candidate))
+    return bool(re.search(r"(?:公司|项目部|工程部|分包商|劳务队|班组)$|^[\u4e00-\u9fa5A-Za-z0-9·]{1,8}(?:老板|包工头)$", candidate))
+
+
+def normalize_person_subject(raw_name: str, suffix: str = "老板") -> str:
+    name = re.sub(r"[^一-龥]", "", str(raw_name or ""))
+    if not (1 <= len(name) <= 3):
+        return ""
+    if name in {"我", "他", "她", "您", "你", "的", "这", "那", "个", "给我", "帮我", "写的", "那个", "这个", "跑了", "失联", "欠薪", "工资", "公司", "工地", "老板"}:
+        return ""
+    return f"{name}{suffix}"
 
 
 def extract_debtor_subject(text: str) -> str:
@@ -526,10 +537,43 @@ def extract_debtor_subject(text: str) -> str:
             if is_useful_subject(candidate):
                 return candidate
 
-    person_match = re.search(r"(?:老板|包工头|班组长)\s*([一-龥]{2,4})", text or "")
-    if person_match:
-        return f"{person_match.group(1)}老板"
+    person_patterns = [
+        (r"([一-龥]{1,3})(老板|包工头|班组长)", 1, 2),
+        (r"(?:老板|包工头|班组长)(?:叫|是|姓|名叫)\s*([一-龥]{1,3})", 1, None),
+    ]
+    for pattern, name_idx, suffix_idx in person_patterns:
+        for match in re.finditer(pattern, text or ""):
+            suffix = match.group(suffix_idx) if suffix_idx else "老板"
+            candidate = normalize_person_subject(match.group(name_idx), suffix)
+            if is_useful_subject(candidate):
+                return candidate
     return "待补充"
+
+
+PROJECT_NOISE_PATTERN = r"(?:给我|帮我|写|生成|模板|起诉状|文书|咋办|怎么|需要|建议|您|我们|平台|系统|案情|这个|那个|该|所谓)"
+
+
+def normalize_project_site_candidate(candidate: str) -> str:
+    value = str(candidate or "")
+    value = re.sub(r"[“”\"『』《》]", "", value)
+    value = re.split(r"[，。；、,\n\r]", value)[0].strip()
+    value = re.sub(r"^(?:在|到|位于|项目名称|工程名称|施工地点|工地位置|您那个|我那个|那个|这个|该)\s*", "", value)
+    value = re.sub(r"(?:干活|干木工|务工|上班|做工|施工|完工|离场).*$", "", value).strip()
+    value = re.sub(r"(?:那个|这个)?(?:工地|项目|工程|现场)$", lambda m: m.group(0).replace("那个", "").replace("这个", ""), value)
+    value = re.sub(r"公司(?:的)?(?:工地|项目|工程|现场)$", lambda m: m.group(0).replace("公司", ""), value)
+    value = re.sub(r"公司(?:那个|这个)(工地|项目|工程|现场)$", r"\1", value)
+    value = re.sub(r"([一-龥A-Za-z0-9·]{2,30})公司(?:那个|这个)?(工地|项目|工程|现场)$", r"\1\2", value)
+    return value.strip()
+
+
+def is_useful_project_site(candidate: str) -> bool:
+    if not candidate or candidate == "待补充" or len(candidate) < 3 or len(candidate) > 40:
+        return False
+    if re.search(PROJECT_NOISE_PATTERN, candidate):
+        return False
+    if re.fullmatch(r"(?:工地|项目|工程|现场|公司|老板|单位)", candidate):
+        return False
+    return bool(re.search(r"(?:工地|项目|工程|现场)$", candidate))
 
 
 def extract_project_site(text: str) -> str:
@@ -540,52 +584,87 @@ def extract_project_site(text: str) -> str:
     for pattern in patterns:
         match = re.search(pattern, text or "")
         if match:
-            value = re.sub(r"(?:干活|干木工|务工|上班|做工).*$", "", match.group(1)).strip()
-            if 2 <= len(value) <= 60:
+            value = normalize_project_site_candidate(match.group(1))
+            if is_useful_project_site(value):
                 return value
     return "待补充"
 
 
-def resolve_relative_year(prefix: str | None) -> int:
+def resolve_relative_year(prefix: str | None, month: int | None = None, text: str = "") -> int:
     current_year = datetime.now().year
     if prefix == "去年":
         return current_year - 1
     if prefix == "明年":
         return current_year + 1
+    if prefix == "今年":
+        return current_year
+    if month and month > datetime.now().month + 2 and "去年" in (text or "") and "今年" in (text or ""):
+        return current_year - 1
     return current_year
 
 
-def extract_timeline(text: str) -> list[dict]:
-    timeline = []
-    for match in re.finditer(r"(去年|今年|明年)?\s*(\d{1,2})\s*月(?:份)?", text or ""):
-        month = int(match.group(2))
-        if not 1 <= month <= 12:
-            continue
-        year = resolve_relative_year(match.group(1))
-        nearby = text[max(0, match.start() - 16):match.end() + 18]
-        if re.search(r"(?:入场|开始|上班|务工|进场|施工)", nearby):
-            title = "开始务工"
-        elif re.search(r"(?:完工|离场|结束|干到|停工)", nearby):
-            title = "工程完工或停止务工"
-        elif re.search(r"(?:干|做)", nearby):
-            title = "务工时间节点"
-        else:
-            title = "案情时间节点"
-        timeline.append({"date": f"{year}年{month}月", "title": title, "detail": nearby.strip()})
+def classify_time_node(text: str, start: int, end: int) -> tuple[str, str, int]:
+    before = text[max(0, start - 18):start]
+    after = text[end:end + 24]
+    nearby = f"{before}{text[start:end]}{after}".strip()
+    if re.search(r"(?:干到|做到|一直到|到)$", before) or re.search(r"(?:完工|离场|结束|停工|老板跑了|失联|结算)", after):
+        return "工程完工或停止务工", nearby, 2
+    if re.search(r"(?:从|自|开始|入场|进场|上班|务工|干|做)", nearby):
+        return "开始务工", nearby, 1
+    return "案情时间节点", nearby, 0
 
-    if re.search(r"(?:欠条|结算单|工资单)", text or ""):
-        timeline.append({"date": "当前", "title": "已持有书面证据", "detail": "案情中提到欠条、结算单或工资单等书面材料。"})
-    if re.search(r"(?:跑了|失联|联系不上|拖欠|不给|没给|差我)", text or ""):
-        timeline.append({"date": "当前", "title": "发生欠薪争议", "detail": "案情中提到欠薪、失联或拒付工资。"})
+
+def extract_timeline(text: str) -> list[dict]:
+    text = text or ""
+    dated_map: dict[tuple[int, int], dict] = {}
+    date_patterns = [
+        r"(?P<year>20\d{2})\s*年\s*(?P<month>\d{1,2})\s*月(?:份)?",
+        r"(?<![年\d])(?P<prefix>去年|今年|明年)?\s*(?P<month>\d{1,2})\s*月(?:份)?",
+    ]
+
+    for pattern in date_patterns:
+        for match in re.finditer(pattern, text):
+            month = int(match.group("month"))
+            if not 1 <= month <= 12:
+                continue
+            explicit_year = match.groupdict().get("year")
+            prefix = match.groupdict().get("prefix")
+            year = int(explicit_year) if explicit_year else resolve_relative_year(prefix, month, text)
+            title, detail, priority = classify_time_node(text, match.start(), match.end())
+            if priority == 0:
+                continue
+            key = (year, month)
+            existing = dated_map.get(key)
+            if existing and existing.get("_priority", 0) >= priority:
+                continue
+            dated_map[key] = {
+                "date": f"{year}年{month}月",
+                "title": title,
+                "detail": detail,
+                "_priority": priority,
+                "_sort": (year, month),
+            }
+
+    timeline = []
+    for item in sorted(dated_map.values(), key=lambda node: node["_sort"]):
+        item.pop("_priority", None)
+        item.pop("_sort", None)
+        timeline.append(item)
+
+    current_nodes = []
+    if re.search(r"(?:欠条|结算单|工资单)", text):
+        current_nodes.append({"date": "当前", "title": "已持有书面证据", "detail": "案情中提到欠条、结算单或工资单等书面材料。"})
+    if re.search(r"(?:跑了|失联|联系不上|拖欠|不给|没给|差我)", text):
+        current_nodes.append({"date": "当前", "title": "发生欠薪争议", "detail": "案情中提到欠薪、失联或拒付工资。"})
 
     deduped = []
     seen = set()
-    for item in timeline:
+    for item in timeline + current_nodes:
         key = (item["date"], item["title"])
         if key not in seen:
             seen.add(key)
             deduped.append(item)
-    return deduped[:6]
+    return deduped[:5]
 
 
 EVIDENCE_KEYWORDS = {
@@ -746,7 +825,7 @@ def build_source_clues(profile: dict, text: str = "") -> list[dict]:
     site = profile.get("project_site") or "待补充"
     subject = profile.get("debtor_subject") or "待补充"
     seed = f"{site}|{subject}|{profile.get('amount_yuan')}|{profile.get('phone')}"
-    has_site_or_subject = site != "待补充" or subject != "待补充"
+    has_site_or_subject = is_useful_project_site(site) or is_useful_subject(subject)
     hotline_count = stable_int(seed + "|12345", 3, 7) if has_site_or_subject else 1
     street_count = max(1, hotline_count // 2) if has_site_or_subject else 0
     procuratorate_count = 1 if hotline_count >= 4 or profile.get("amount_yuan") else 0
@@ -883,6 +962,20 @@ def build_data_fusion_summary(clues: list[dict], risk_alert: dict) -> dict:
     }
 
 
+def risk_group_identity(profile: dict) -> tuple[str, str] | None:
+    site = normalize_project_site_candidate(profile.get("project_site", ""))
+    subject = normalize_subject_candidate(profile.get("debtor_subject", ""))
+    if is_useful_project_site(site):
+        return "project", site
+    if is_useful_subject(subject) and subject.endswith("公司") and any(keyword in subject for keyword, _, _ in STREET_HINTS):
+        inferred_site = normalize_project_site_candidate(f"{subject}工地")
+        if is_useful_project_site(inferred_site):
+            return "project", inferred_site
+    if is_useful_subject(subject):
+        return "subject", subject
+    return None
+
+
 def build_case_profile(text: str, user_name: str = "王某某", phone: str = "133 3107 4710") -> dict:
     text = text or ""
     amount = extract_amount_yuan(text)
@@ -949,16 +1042,18 @@ def build_admin_risk_summary(records: list[dict]) -> list[dict]:
     for row in records:
         profile = row.get("case_profile") or {}
         alert = profile.get("risk_alert") or {}
-        key = profile.get("project_site")
-        if not key or key == "待补充":
-            key = profile.get("debtor_subject") or "待补充项目"
-
-        if key == "待补充项目":
+        identity = risk_group_identity(profile)
+        if not identity:
             continue
+        identity_type, key = identity
+        project_site = key if identity_type == "project" else "待补充"
+        debtor_subject = normalize_subject_candidate(profile.get("debtor_subject", "")) if is_useful_subject(normalize_subject_candidate(profile.get("debtor_subject", ""))) else "待补充"
+        if identity_type == "subject":
+            debtor_subject = key
 
         group = groups.setdefault(key, {
-            "project_site": profile.get("project_site", "待补充"),
-            "debtor_subject": profile.get("debtor_subject", "待补充"),
+            "project_site": project_site,
+            "debtor_subject": debtor_subject,
             "level": alert.get("level", "关注"),
             "color": alert.get("color", "zinc"),
             "risk_score": 0,
@@ -992,8 +1087,9 @@ def build_admin_risk_summary(records: list[dict]) -> list[dict]:
         item["risk_tags"] = sorted(item["risk_tags"])
         if not item["related_clue_count"]:
             item["related_clue_count"] = sum(item["source_counts"].values())
+        display_name = item["project_site"] if item["project_site"] != "待补充" else item["debtor_subject"]
         item["warning_text"] = (
-            f"{item['project_site'] if item['project_site'] != '待补充' else item['debtor_subject']}"
+            f"{display_name}"
             f"已融合 {item['related_clue_count']} 起相关欠薪线索，风险等级：{item['level']}。"
         )
         summary.append(item)
@@ -1202,7 +1298,7 @@ async def chat_endpoint(request: ChatRequest):
                     sources=source_items,
                     user_name=request.user_name,
                     phone=request.phone,
-                    case_profile=build_case_profile(f"{request.query}\n{accumulated_content}", request.user_name, request.phone),
+                    case_profile=build_case_profile(request.query, request.user_name, request.phone),
                 )
                 
             yield "data: [DONE]\n\n"
@@ -1233,7 +1329,7 @@ async def chat_endpoint(request: ChatRequest):
             source_items,
             request.user_name,
             request.phone,
-            case_profile=build_case_profile(f"{request.query}\n{full_answer}", request.user_name, request.phone),
+            case_profile=build_case_profile(request.query, request.user_name, request.phone),
         )
 
         payload = {"answer": full_answer, "sources": source_items, "reasoning": full_reasoning}
@@ -1338,9 +1434,7 @@ async def admin_records(days: int = 7):
             continue
         answer = item.get("justitia_answer", "")
         query = item.get("user_query", "")
-        profile = item.get("case_profile") or build_case_profile(f"{query}\n{answer}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
-        if not profile.get("risk_alert"):
-            profile = build_case_profile(f"{query}\n{answer}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
+        profile = build_case_profile(query, item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
         records.append({
             "id": record_id(item.get("timestamp"), item.get("phone"), query, "chat"),
             "timestamp": item.get("timestamp"),
@@ -1363,9 +1457,10 @@ async def admin_records(days: int = 7):
             continue
         question = item.get("question", "")
         summary = item.get("summary", "")
-        profile = item.get("case_profile") or build_case_profile(f"{question}\n{summary}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
-        if not profile.get("risk_alert"):
-            profile = build_case_profile(f"{question}\n{summary}", item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
+        profile_text = question or summary
+        if item.get("event_type") == "case_submitted":
+            profile_text = "\n".join(part for part in [question, summary] if part)
+        profile = build_case_profile(profile_text, item.get("user_name", "王某某"), item.get("phone", "133 3107 4710"))
         records.append({
             "id": record_id(item.get("timestamp"), item.get("phone"), item.get("request_id"), item.get("event_type")),
             "timestamp": item.get("timestamp"),

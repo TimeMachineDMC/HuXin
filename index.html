@@ -44,9 +44,14 @@
 
         /* 对话框排版优化 */
         .chat-container {
-            height: calc(100vh - 220px);
+            height: calc(100vh - 190px);
             overflow-y: auto;
-            padding-bottom: 180px !important;
+            padding-bottom: 120px !important;
+        }
+
+        #view-chat main {
+            min-height: calc(100vh - 150px);
+            align-items: flex-start;
         }
 
         .markdown-body {
@@ -329,9 +334,9 @@
                     </ul>
 
                     <div id="data-fusion-panel" class="mt-5 pt-4 border-t border-white/5">
-                        <h4 class="text-xs font-bold text-zinc-500 mb-3 uppercase tracking-widest">多源线索融合</h4>
+                        <h4 class="text-xs font-bold text-zinc-500 mb-3 uppercase tracking-widest">下一步提示</h4>
                         <div class="rounded-lg border border-white/5 bg-zinc-950/70 p-3">
-                            <p class="text-xs text-zinc-500">发送案情后同步显示12345、街道综治、检察业务和自主填报线索。</p>
+                            <p class="text-xs text-zinc-500">发送案情后自动提示缺什么材料、是否需要打12345或去街道反映。</p>
                         </div>
                     </div>
 
@@ -375,7 +380,7 @@
             </div>
         </main>
 
-        <footer id="chat-footer" class="fixed bottom-8 w-full bg-transparent z-40 pointer-events-none">
+        <footer id="chat-footer" class="fixed bottom-4 w-full bg-transparent z-40 pointer-events-none">
             <div class="max-w-5xl mx-auto flex gap-6 px-4 w-full">
                 <div class="w-64 hidden md:block"></div>
 
@@ -1365,7 +1370,7 @@
         }
 
         function mergedTimeline(profile) {
-            const timeline = [...(profile?.timeline || []), ...(profile?.data_timeline || [])];
+            const timeline = [...(profile?.timeline || [])];
             const seen = new Set();
             return timeline.filter(item => {
                 const key = `${item.date || ""}|${item.title || ""}|${item.detail || ""}`;
@@ -1379,34 +1384,27 @@
             const panel = document.getElementById('data-fusion-panel');
             if (!panel) return;
             const risk = profile?.risk_alert || {};
-            const summary = profile?.data_fusion_summary || {};
-            const counts = risk.source_counts || summary.source_counts || {};
-            const total = Number(risk.related_clue_count || summary.total_clues || 0);
-            const level = risk.level || "待识别";
-            const rows = Object.keys(sourceLabels).map(source => {
-                const count = Number(counts[source] || 0);
-                const tone = sourceTone[source] || 'bg-zinc-800 text-zinc-300 border-zinc-700';
-                return `
-                    <div class="flex items-center justify-between gap-2">
-                        <span class="rounded-md border px-2 py-1 ${tone}">${escapeHtml(sourceLabel(source, profile))}</span>
-                        <span class="text-zinc-300 font-mono">${count} 起</span>
-                    </div>
-                `;
-            }).join("");
+            const missing = profile?.missing_items || [];
+            const actions = [];
+            if (profile?.debtor_subject === "待补充") actions.push("先补清公司全称，或老板、包工头的姓名和电话。");
+            if (!profile?.amount_yuan) actions.push("把欠薪金额写清楚，最好用欠条、结算单或聊天记录固定。");
+            if (!(profile?.evidence_items || []).length) actions.push("先拍照保存欠条、聊天记录、工地照片、工牌或考勤。");
+            if (Number(risk.related_clue_count || 0) >= 4 && profile?.project_site !== "待补充") {
+                actions.push("可以同时拨打12345，或去工地属地街道综治中心反映欠薪。");
+            }
+            if (!actions.length && missing.length) actions.push(...missing.slice(0, 2).map(item => item.replace(/：.*/, "")));
+            if (!actions.length) actions.push("证据已经比较清楚，先保存原件和截图，下一步可生成文书或提交预审。");
+            const tip = Number(risk.related_clue_count || 0) >= 4
+                ? "后台已自动比对同工地线索；你这边只需要按下面几步做。"
+                : "系统会先帮你整理缺口，不需要反复讲案情。";
 
             panel.innerHTML = `
-                <h4 class="text-xs font-bold text-zinc-500 mb-3 uppercase tracking-widest">多源线索融合</h4>
-                <div class="rounded-lg border border-white/5 bg-zinc-950/70 p-3 space-y-3">
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs text-zinc-500">标准化线索</span>
-                        <span class="text-sm font-bold text-white">${total || "--"} 起</span>
-                    </div>
-                    <div class="space-y-2 text-xs">${rows}</div>
-                    <div class="pt-3 border-t border-white/5 flex items-center justify-between gap-2">
-                        <span class="text-xs text-zinc-500">风险等级</span>
-                        <span class="rounded-full border px-2 py-1 text-xs ${riskBadgeClass(level)}">${escapeHtml(level)}</span>
-                    </div>
-                    <p class="text-[11px] leading-relaxed text-zinc-500">${escapeHtml(risk.recommended_action || "发送案情后生成同工地风险提示。")}</p>
+                <h4 class="text-xs font-bold text-zinc-500 mb-3 uppercase tracking-widest">下一步提示</h4>
+                <div class="rounded-lg border border-white/5 bg-zinc-950/70 p-3">
+                    <p class="text-[11px] leading-relaxed text-zinc-500 mb-3">${escapeHtml(tip)}</p>
+                    <ul class="space-y-2 text-xs text-zinc-300">
+                        ${actions.slice(0, 3).map(item => `<li class="flex gap-2"><span class="text-amber-500">•</span><span>${escapeHtml(item)}</span></li>`).join("")}
+                    </ul>
                 </div>
             `;
         }
@@ -1471,7 +1469,7 @@
                 <li class="relative pl-4 border-l border-amber-500/30">
                     <span class="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-amber-500"></span>
                     <p class="text-amber-400 text-xs font-bold">${escapeHtml(item.date || "时间待补充")}</p>
-                    <p class="text-zinc-200 font-bold">${escapeHtml(item.title || "案情节点")}${item.source ? ` <span class="ml-1 text-[11px] text-zinc-500">(${Number(item.related_count || 0)}起)</span>` : ""}</p>
+                    <p class="text-zinc-200 font-bold">${escapeHtml(item.title || "案情节点")}</p>
                     <p class="text-xs text-zinc-500 leading-relaxed mt-1">${escapeHtml(item.detail || "")}</p>
                 </li>
             `).join("");
@@ -1879,7 +1877,7 @@
                 .trim();
 
             const orgMatch = value.match(/[\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}?(?:公司|项目部|工程部|分包商|劳务队|班组)/u);
-            if (orgMatch) value = orgMatch[0];
+            if (orgMatch) value = orgMatch[0].replace(/^(北京市西城区|北京西城区|西城区)/u, "");
 
             return value
                 .replace(/^(?:在|到|给|跟|为)/u, "")
@@ -1891,8 +1889,8 @@
         function isUsefulDebtorCandidate(candidate) {
             if (!candidate || candidate.length < 2 || candidate.length > 40) return false;
             if (/^(?:公司|单位|雇主|老板|被告|被申请人|项目|工地|包工头|劳动者|申请人)$/u.test(candidate)) return false;
-            if (/(?:某|XX|xxx|未知|待补充|不清楚|全称|姓名|身份|信息|电话|地址|证据|欠条|工资|金额|劳动合同|工牌)/iu.test(candidate)) return false;
-            return /(?:公司|项目部|工程部|分包商|劳务队|班组)$|^[\u4e00-\u9fa5A-Za-z0-9·]{2,8}(?:老板|包工头)$/u.test(candidate);
+            if (/(?:某|XX|xxx|未知|待补充|不清楚|全称|姓名|身份|信息|电话|地址|证据|欠条|工资|金额|劳动合同|工牌|给我|帮我|写|生成|模板|起诉状|文书|咋办|怎么|需要|建议|您|我们|平台|系统|案情|那个)/iu.test(candidate)) return false;
+            return /(?:公司|项目部|工程部|分包商|劳务队|班组)$|^[\u4e00-\u9fa5A-Za-z0-9·]{1,8}(?:老板|包工头)$/u.test(candidate);
         }
 
         function extractDebtor(text) {
@@ -1912,14 +1910,64 @@
                 if (candidates.length) break;
             }
 
+            for (const match of text.matchAll(/([一-龥]{1,3})(老板|包工头|班组长)/gu)) {
+                const name = match[1];
+                if (!['我', '他', '她', '您', '你', '的', '这', '那', '个'].includes(name)) {
+                    const candidate = `${name}${match[2]}`;
+                    if (isUsefulDebtorCandidate(candidate)) return candidate;
+                }
+            }
+
             return candidates[0] || "待补充";
+        }
+
+        function normalizeProjectSiteCandidate(value) {
+            return String(value || "")
+                .replace(/[“”"『』《》]/g, "")
+                .split(/[，。；、,\n\r]/)[0]
+                .replace(/^(在|到|位于|项目名称|工程名称|施工地点|工地位置|您那个|我那个|那个|这个|该)\s*/g, "")
+                .replace(/(干活|干木工|务工|上班|做工|施工|完工|离场).*$/g, "")
+                .replace(/(那个|这个)(工地|项目|工程|现场)$/g, "$2")
+                .replace(/([一-龥A-Za-z0-9·]{2,30})公司(那个|这个)?(工地|项目|工程|现场)$/g, "$1$3")
+                .replace(/公司(的)?(工地|项目|工程|现场)$/g, "$2")
+                .trim();
+        }
+
+        function isUsefulProjectSite(value) {
+            const site = String(value || "");
+            if (!site || site === "待补充" || site.length < 3 || site.length > 40) return false;
+            if (/(给我|帮我|写|生成|模板|起诉状|文书|咋办|怎么|需要|建议|您|我们|平台|系统|案情|这个|那个)/.test(site)) return false;
+            return /(工地|项目|工程|现场)$/.test(site);
+        }
+
+        function classifyClientTime(text, start, end) {
+            const before = text.slice(Math.max(0, start - 18), start);
+            const after = text.slice(end, end + 24);
+            const nearby = `${before}${text.slice(start, end)}${after}`.trim();
+            if (/(干到|做到|一直到|到)$/.test(before) || /(完工|离场|结束|停工|老板跑了|失联|结算)/.test(after)) {
+                return { title: '工程完工或停止务工', detail: nearby, priority: 2 };
+            }
+            if (/(从|自|开始|入场|进场|上班|务工|干|做)/.test(nearby)) {
+                return { title: '开始务工', detail: nearby, priority: 1 };
+            }
+            return { title: '案情时间节点', detail: nearby, priority: 0 };
+        }
+
+        function resolveClientYear(prefix, month, text) {
+            const currentYear = new Date().getFullYear();
+            if (prefix === '去年') return currentYear - 1;
+            if (prefix === '明年') return currentYear + 1;
+            if (prefix === '今年') return currentYear;
+            if (month > new Date().getMonth() + 3 && /去年/.test(text) && /今年/.test(text)) return currentYear - 1;
+            return currentYear;
         }
 
         function buildClientCaseProfile(text) {
             const amount = extractAmount(text);
             const company = extractDebtor(text);
             const siteMatch = text.match(/(?:在|到)\s*([^，。；\n\r]{2,40}?(?:工地|项目|工程|现场))/);
-            const projectSite = siteMatch ? siteMatch[1].replace(/(?:干活|干木工|务工|上班|做工).*$/g, '').trim() : '待补充';
+            const siteCandidate = siteMatch ? normalizeProjectSiteCandidate(siteMatch[1]) : '待补充';
+            const projectSite = isUsefulProjectSite(siteCandidate) ? siteCandidate : '待补充';
             const hasContract = /合同|劳动合同|协议/.test(text);
             const evidenceItems = [];
             if (/欠条|借条/.test(text)) evidenceItems.push('欠条');
@@ -1931,19 +1979,29 @@
             if (/工友|证人|证明/.test(text)) evidenceItems.push('证人证言');
 
             const timeline = [];
-            for (const match of text.matchAll(/(去年|今年|明年)?\s*(\d{1,2})\s*月(?:份)?/g)) {
+            const dated = new Map();
+            for (const match of text.matchAll(/(?<![年\d])(去年|今年|明年)?\s*(\d{1,2})\s*月(?:份)?/g)) {
                 const prefix = match[1];
-                const year = prefix === '去年' ? new Date().getFullYear() - 1 : (prefix === '明年' ? new Date().getFullYear() + 1 : new Date().getFullYear());
                 const month = Number(match[2]);
-                const nearby = text.slice(Math.max(0, match.index - 14), match.index + match[0].length + 16);
                 if (month >= 1 && month <= 12) {
-                    timeline.push({
+                    const year = resolveClientYear(prefix, month, text);
+                    const node = classifyClientTime(text, match.index, match.index + match[0].length);
+                    if (!node.priority) continue;
+                    const key = `${year}-${month}`;
+                    const existing = dated.get(key);
+                    if (existing && existing.priority >= node.priority) continue;
+                    dated.set(key, {
                         date: `${year}年${month}月`,
-                        title: /完工|离场|结束|干到/.test(nearby) ? '工程完工或停止务工' : '务工时间节点',
-                        detail: nearby
+                        title: node.title,
+                        detail: node.detail,
+                        priority: node.priority,
+                        sort: year * 100 + month
                     });
                 }
             }
+            [...dated.values()].sort((a, b) => a.sort - b.sort).forEach(item => {
+                timeline.push({ date: item.date, title: item.title, detail: item.detail });
+            });
             if (/欠条|结算单|工资单/.test(text)) timeline.push({ date: '当前', title: '已持有书面证据', detail: '案情中提到欠条、结算单或工资单等书面材料。' });
             if (/跑了|失联|联系不上|拖欠|不给|没给|差我/.test(text)) timeline.push({ date: '当前', title: '发生欠薪争议', detail: '案情中提到欠薪、失联或拒付工资。' });
 
@@ -2066,7 +2124,7 @@
                 <li class="relative pl-4 border-l border-amber-500/30">
                     <span class="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-amber-500"></span>
                     <p class="text-amber-400 font-bold">${escapeHtml(item.date || "时间待补充")}</p>
-                    <p class="text-zinc-300">${escapeHtml(item.title || "案情节点")}${item.source ? ` <span class="text-[11px] text-zinc-500">(${Number(item.related_count || 0)}起)</span>` : ""}</p>
+                    <p class="text-zinc-300">${escapeHtml(item.title || "案情节点")}</p>
                 </li>
             `).join("");
         }
