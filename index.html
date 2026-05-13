@@ -256,7 +256,8 @@
     </div>
 
     <main id="view-login" class="view-section flex items-center justify-center min-h-[70vh]">
-        <div class="bg-zinc-900/50 p-8 rounded-2xl border border-white/5 shadow-2xl w-[28rem] max-w-[92vw] backdrop-blur-sm text-center">
+        <div
+            class="bg-zinc-900/50 p-8 rounded-2xl border border-white/5 shadow-2xl w-[28rem] max-w-[92vw] backdrop-blur-sm text-center">
             <h2 class="text-xl font-bold text-white mb-2">维权通道登录</h2>
             <p class="text-xs text-zinc-500 mb-6">实名认证保障您的合法权益</p>
 
@@ -521,13 +522,13 @@
                 <p id="tracking-anxiety-note" class="text-zinc-400">系统已生成智能预审卷宗，并同步登记后续跟进事项。</p>
                 <div class="mt-6 inline-block bg-zinc-950 border border-zinc-800 px-6 py-3 rounded-lg">
                     <span class="text-xs text-zinc-500 mr-2">智能预收案号：</span>
-                    <span id="tracking-case-number" class="text-amber-500 font-mono font-bold tracking-widest">登记中</span>
+                    <span id="tracking-case-number"
+                        class="text-amber-500 font-mono font-bold tracking-widest">登记中</span>
                 </div>
                 <p id="case-submit-meta" class="text-xs text-zinc-500 mt-3"></p>
             </div>
 
-            <div id="tracking-summary-card"
-                class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-8 relative z-10">
+            <div id="tracking-summary-card" class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-8 relative z-10">
                 <div class="rounded-xl border border-white/5 bg-zinc-950/70 p-4">
                     <p class="text-xs text-zinc-500 mb-1">当前状态</p>
                     <p id="tracking-current-status" class="text-sm font-bold text-amber-400">材料登记中</p>
@@ -589,8 +590,7 @@
             </div>
         </div>
 
-        <section id="admin-risk-summary"
-            class="mb-6 border border-amber-500/20 bg-zinc-950/70 rounded-xl p-5 hidden">
+        <section id="admin-risk-summary" class="mb-6 border border-amber-500/20 bg-zinc-950/70 rounded-xl p-5 hidden">
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
                 <div>
                     <p class="text-xs text-amber-500 font-bold tracking-widest uppercase">风险预警</p>
@@ -603,7 +603,8 @@
 
         <section id="admin-case-detail"
             class="hidden mb-6 border border-amber-500/20 bg-zinc-950/70 rounded-xl overflow-hidden">
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-5 py-4 border-b border-white/5">
+            <div
+                class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-5 py-4 border-b border-white/5">
                 <div>
                     <p class="text-xs text-amber-500 font-bold tracking-widest uppercase">案件详情</p>
                     <h3 id="admin-detail-title" class="text-lg font-bold text-white mt-1">--</h3>
@@ -616,11 +617,13 @@
                     <div id="admin-detail-facts" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm"></div>
                     <div class="mt-5">
                         <p class="text-xs text-zinc-500 font-bold mb-2">原始问题 / 摘要</p>
-                        <p id="admin-detail-question" class="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap"></p>
+                        <p id="admin-detail-question" class="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                        </p>
                     </div>
                     <div class="mt-5">
                         <p class="text-xs text-zinc-500 font-bold mb-2">AI 答复 / 处理记录</p>
-                        <div id="admin-detail-answer" class="text-sm text-zinc-400 leading-relaxed max-h-48 overflow-y-auto pr-2"></div>
+                        <div id="admin-detail-answer"
+                            class="text-sm text-zinc-400 leading-relaxed max-h-48 overflow-y-auto pr-2"></div>
                     </div>
                 </div>
                 <div class="p-5">
@@ -663,7 +666,7 @@
 
     <script>
         // GitHub Pages 给其他设备使用时必须走公网 HTTPS 后端。cpolar 地址变化后，只改下面这一行。
-        const PAGE_API_BASE_URL = "https://7de19a52.r39.cpolar.top";
+        const PAGE_API_BASE_URL = "https://16240a92.r39.cpolar.top";
         const LOCAL_BROWSER_API_BASE_URL = "http://127.0.0.1:8000";
         const LOCAL_API_BASE_URL = window.location.protocol === "file:" ? LOCAL_BROWSER_API_BASE_URL : window.location.origin;
         const apiFromUrl = new URLSearchParams(window.location.search).get("api");
@@ -1144,11 +1147,11 @@
             const missing = profile.missing_items || [];
             card.innerHTML = `
                 <p><strong class="text-zinc-200">用途：</strong>${escapeHtml({
-                    qisuzhuang: '法院起诉用',
-                    sq_zhichiqisu: '申请检察支持起诉用',
-                    ws_zhichiqisu: '检察机关审查参考',
-                    fayuan: '申请法律援助用'
-                }[type] || '维权材料')}</p>
+                qisuzhuang: '法院起诉用',
+                sq_zhichiqisu: '申请检察支持起诉用',
+                ws_zhichiqisu: '检察机关审查参考',
+                fayuan: '申请法律援助用'
+            }[type] || '维权材料')}</p>
                 <p><strong class="text-zinc-200">签字前核对：</strong>主体、金额、日期、证据名称和联系方式。</p>
                 <p><strong class="text-zinc-200">待补：</strong>${escapeHtml(missing[0] || '暂无明显缺口，建议核对原件。')}</p>
             `;
